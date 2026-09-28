@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mobadent - BI & Control de Compras</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <div class="max-w-7xl mx-auto p-4 md:p-6">
+    
+    <!-- Encabezado y Navegación de Pestañas -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b pb-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700">Mobadent Strategic Intelligence</h1>
+        <p class="text-xs md:text-sm text-slate-500">Gestión de costos, tesorería y auditoría de compras</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="abrirModalHistoricoAlertas()" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-3.5 rounded-lg text-xs shadow transition cursor-pointer flex items-center gap-1.5">
+          📋 Historial Alertas
+        </button>
+        <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow transition">
+          + Registrar Factura
+        </a>
+      </div>
+    </div>
+
+    <!-- Barra de Pestañas Principales -->
+    <div class="flex border-b border-slate-200 mb-6 gap-4 text-sm font-semibold">
+      <button id="tabBtnDashboard" onclick="cambiarPestana('dashboard')" class="pb-3 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-2">
+        📊 Panel Estratégico & Facturas
+      </button>
+      <button id="tabBtnCatalogo" onclick="cambiarPestana('catalogo')" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-2">
+        📦 Catálogo Maestro de Productos (<span id="badgeTotalProductos">0</span>)
+      </button>
+    </div>
+
+    <!-- VISTA 1: DASHBOARD ESTRATÉGICO & FACTURAS -->
+    <div id="vistaDashboard">
+      
+      <!-- BUSCADOR REACTIVO EN TIEMPO REAL -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              🔍 Búsqueda y Comparativa de Insumos en Vivo
+            </h2>
+            <p class="text-xs text-slate-400">Escribe el nombre de cualquier producto para ver su auditoría de precios al instante</p>
+          </div>
+          <div class="relative w-full sm:w-80">
+            <input type="text" id="inputBuscarProd" placeholder="Escribe para buscar (ej: Resina, Guantes, Conos)..." 
+                   class="border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+          </div>
+        </div>
+
+        <div id="resBuscadorProd" class="hidden border-t pt-4 mt-3">
+          <div class="text-xs font-semibold text-slate-500 mb-3" id="contadorResultados"></div>
+          <div id="contenedorTarjetasProductos" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- Panel de Variación de Costos Recientes -->
+      <div id="alertaPreciosContenedor" class="hidden mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-sm">
+        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2">
+          <span class="text-amber-700 font-bold text-sm">⚠️ Auditoría de Variación de Precios Recientes</span>
+          <button onclick="abrirModalHistoricoAlertas()" class="text-xs text-amber-800 hover:text-amber-950 font-semibold underline cursor-pointer text-left sm:text-right">
+            Ver todas o restaurar descartadas →
+          </button>
+        </div>
+        <div id="listaAlertas" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs"></div>
+      </div>
+
+      <!-- KPIs Clave -->
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Gasto Total Acumulado</span>
+          <div id="kpiTotalGasto" class="text-2xl font-bold text-slate-900 mt-1">$0.00</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Facturas Totales</span>
+          <div id="kpiTotalFacturas" class="text-2xl font-bold text-blue-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Proveedor Principal</span>
+          <div id="kpiTopProveedor" class="text-lg font-bold text-emerald-600 mt-1 truncate">N/A</div>
+        </div>
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Compromisos Mes Actual</span>
+          <div id="kpiFlujoMes" class="text-xl font-bold text-purple-600 mt-1">$0.00</div>
+        </div>
+      </div>
+
+      <!-- Matriz: Concentración, Insumos Críticos y Flujo -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="flex justify-between items-center mb-3">
+            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Concentración</h2>
+            <span class="text-xs text-slate-400">% Gasto</span>
+          </div>
+          <div id="listaProveedores" class="space-y-3"></div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <div class="flex justify-between items-center mb-3">
+            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Insumos Críticos</h2>
+            <span class="text-xs text-slate-400">Volumen / Monto</span>
+          </div>
+          <div class="overflow-y-auto max-h-56">
+            <table class="w-full text-left text-xs" id="tableInsumos">
+              <thead>
+                <tr class="border-b text-slate-400">
+                  <th class="pb-1">Producto</th>
+                  <th class="pb-1 text-center">Cant.</th>
+                  <th class="pb-1 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Flujo de Caja con Chart.js -->
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div class="flex justify-between items-center mb-2">
+            <div>
+              <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Desembolso de Caja</h2>
+              <p class="text-[11px] text-slate-400">Mensual (IVA incluido)</p>
+            </div>
+            <span id="promedioDesembolsoBadge" class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+              Promedio: $0.00
+            </span>
+          </div>
+          <div class="relative h-44 w-full mt-1">
+            <canvas id="chartFlujoCaja"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Historial de Facturas con Filtro y Estado de Pago -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+        <div class="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-3">
+          <h2 class="text-base font-bold text-slate-800">Historial de Facturas y Tesorería</h2>
+          
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="text-slate-400 font-medium">Desde:</span>
+            <input type="date" id="filtroDesde" class="border rounded px-2 py-1 bg-slate-50 text-slate-700">
+            <span class="text-slate-400 font-medium">Hasta:</span>
+            <input type="date" id="filtroHasta" class="border rounded px-2 py-1 bg-slate-50 text-slate-700">
+            <button id="btnFiltrarFecha" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-2.5 py-1 rounded transition cursor-pointer">
+              Filtrar
+            </button>
+            <button id="btnLimpiarFecha" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-2 py-1 rounded transition cursor-pointer">
+              Limpiar
+            </button>
+            
+            <div class="text-slate-500 ml-2">
+              Pág:
+              <select id="itemsPerPage" class="border rounded px-1.5 py-1 bg-slate-50">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm" id="tableHistorial">
+            <thead>
+              <tr class="border-b text-slate-500 text-xs uppercase bg-slate-50">
+                <th class="p-3">ID</th>
+                <th class="p-3">Proveedor & Nota</th>
+                <th class="p-3">N° Factura</th>
+                <th class="p-3">Fecha</th>
+                <th class="p-3 text-center">Estado de Pago</th>
+                <th class="p-3 text-center">Ítems</th>
+                <th class="p-3 text-right">Total</th>
+                <th class="p-3 text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+
+        <div class="p-4 border-t border-slate-100 flex items-center justify-between">
+          <span id="pageInfo" class="text-xs font-medium text-slate-500">Página 1 de 1</span>
+          <div class="flex items-center gap-2">
+            <button id="btnPrev" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              ← Anterior
+            </button>
+            <button id="btnNext" class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              Siguiente →
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- VISTA 2: CATÁLOGO MAESTRO DE PRODUCTOS -->
+    <div id="vistaCatalogo" class="hidden">
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
+        
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 pb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-base font-bold text-slate-800">Catálogo General de Insumos</h2>
+            <p class="text-xs text-slate-400">Listado íntegro con precios de referencia y variación cronológica</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 w-full md:w-auto text-xs">
+            <input type="text" id="filtroTextoCatalogo" placeholder="Filtrar catálogo..." 
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-xs w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            
+            <select id="filtroEstadoCatalogo" class="border border-slate-300 rounded-lg px-2.5 py-2 text-xs bg-slate-50 text-slate-700">
+              <option value="todos">Todos los productos</option>
+              <option value="subidas">🔴 Subidas de Precio (+Caro)</option>
+              <option value="ahorros">🟢 Ahorros / Rebajas (-Barato)</option>
+              <option value="estables">✓ Precios Estables</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-lg border border-slate-200">
+          <table class="w-full text-left text-xs" id="tableCatalogoMaestro">
+            <thead class="bg-slate-50 border-b text-slate-600 font-semibold uppercase">
+              <tr>
+                <th class="p-3">Producto / Presentación</th>
+                <th class="p-3 text-center">Compras</th>
+                <th class="p-3 text-center">Uds</th>
+                <th class="p-3 text-right">Último</th>
+                <th class="p-3 text-right">Mínimo</th>
+                <th class="p-3 text-right">Máximo</th>
+                <th class="p-3 text-right">Promedio</th>
+                <th class="p-3 text-center">Estado / Variación</th>
+                <th class="p-3 text-center">Acción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL DE DETALLE -->
+  <div id="modalDetalle" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <div>
+          <h3 class="text-lg font-bold text-slate-800" id="modalTitulo">Detalle de Factura</h3>
+          <p class="text-xs text-slate-500" id="modalSubtitulo"></p>
+        </div>
+        <button onclick="cerrarModal()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold p-1 leading-none cursor-pointer">&times;</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 border rounded-lg">
+        <table class="w-full text-left text-xs" id="tableModalItems">
+          <thead class="bg-slate-50 border-b">
+            <tr>
+              <th class="p-2.5">Descripción del Insumo</th>
+              <th class="p-2.5 text-center">Cant.</th>
+              <th class="p-2.5 text-right">Precio Unit.</th>
+              <th class="p-2.5 text-center">% Dcto</th>
+              <th class="p-2.5 text-right">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 flex justify-between items-center border-t pt-3">
+        <span class="text-sm font-semibold text-slate-600">Total Factura:</span>
+        <div id="modalTotal" class="text-right"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE EDICIÓN -->
+  <div id="modalEditar" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full p-6 max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <div>
+          <h3 class="text-lg font-bold text-slate-800">Editar Factura</h3>
+          <p class="text-xs text-slate-500">Corrige números o importes leídos por la IA</p>
+        </div>
+        <button onclick="cerrarModalEditar()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold p-1 leading-none cursor-pointer">&times;</button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 text-xs">
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">N° Factura:</label>
+          <input type="text" id="editNumFactura" class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block font-medium text-slate-600 mb-1">Fecha Emisión:</label>
+          <input type="date" id="editFechaEmision" class="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs font-bold text-slate-700 uppercase">Productos / Ítems</span>
+        <button onclick="agregarFilaEdicion()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2 py-1 rounded border cursor-pointer">
+          + Agregar Producto
+        </button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 border rounded-lg mb-4">
+        <table class="w-full text-left text-xs" id="tableEditItems">
+          <thead class="bg-slate-50 border-b">
+            <tr>
+              <th class="p-2">Descripción</th>
+              <th class="p-2 w-20 text-center">Cant.</th>
+              <th class="p-2 w-24 text-right">Precio Unit.</th>
+              <th class="p-2 w-16 text-center">% Dcto</th>
+              <th class="p-2 w-10 text-center"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t pt-3">
+        <button onclick="cerrarModalEditar()" class="px-4 py-2 border rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
+          Cancelar
+        </button>
+        <button id="btnGuardarEdicion" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer">
+          Guardar Cambios
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL HISTÓRICO DE ALERTAS -->
+  <div id="modalHistoricoAlertas" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-center border-b pb-3 mb-4">
+        <div>
+          <h3 class="text-lg font-bold text-slate-800">Repositorio Histórico de Alertas de Precios</h3>
+          <p class="text-xs text-slate-500">Registro auditable de todas las variaciones detectadas en tus compras</p>
+        </div>
+        <button onclick="cerrarModalHistoricoAlertas()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold p-1 leading-none cursor-pointer">&times;</button>
+      </div>
+
+      <div class="flex justify-between items-center mb-3 text-xs">
+        <span class="text-slate-500" id="contadorAlertasModal">Cargando alertas...</span>
+        <button onclick="restaurarTodasLasAlertas()" class="text-blue-600 hover:text-blue-800 font-semibold underline cursor-pointer">
+          Restaurar todas al panel principal
+        </button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 border rounded-lg">
+        <table class="w-full text-left text-xs" id="tableModalAlertas">
+          <thead class="bg-slate-50 border-b text-slate-600">
+            <tr>
+              <th class="p-2.5">Fecha</th>
+              <th class="p-2.5">Producto</th>
+              <th class="p-2.5">Proveedor</th>
+              <th class="p-2.5 text-right">P. Anterior</th>
+              <th class="p-2.5 text-right">P. Nuevo</th>
+              <th class="p-2.5 text-center">Variación</th>
+              <th class="p-2.5 text-center">Estado</th>
+              <th class="p-2.5 text-center">Acción</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 flex justify-end border-t pt-3">
+        <button onclick="cerrarModalHistoricoAlertas()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+
+    let listaFacturas = [];
+    let facturasFiltradas = [];
+    let todasLasAlertasCargadas = [];
+    let catalogoCompleto = [];
+    let currentPage = 1;
+    let pageSize = 10;
+    let gastoTotalGlobal = 0;
+    let facturaEnEdicionId = null;
+    let miGraficoFlujo = null;
+
+    function cambiarPestana(pestana) {
+      const vDash = document.getElementById("vistaDashboard");
+      const vCat = document.getElementById("vistaCatalogo");
+      const tDash = document.getElementById("tabBtnDashboard");
+      const tCat = document.getElementById("tabBtnCatalogo");
+
+      if (pestana === "catalogo") {
+        vDash.classList.add("hidden");
+        vCat.classList.remove("hidden");
+        tCat.className = "pb-3 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-2";
+        tDash.className = "pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-2";
+        cargarCatalogoMaestro();
+      } else {
+        vCat.classList.add("hidden");
+        vDash.classList.remove("hidden");
+        tDash.className = "pb-3 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-2";
+        tCat.className = "pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-2";
+      }
+    }
+
+    async function cargarTodo() {
+      try {
+        // Disparar las 5 consultas simultáneamente en paralelo
+        const [resStats, resInsumos, resAlertas, resFlujo, resList] = await Promise.all([
+          fetch(`${API_URL}/estadisticas`),
+          fetch(`${API_URL}/analitica/productos`),
+          fetch(`${API_URL}/analitica/alertas-precios`),
+          fetch(`${API_URL}/analitica/flujo-caja`),
+          fetch(`${API_URL}/facturas/listado`)
+        ]);
+
+        const [stats, insumos, alertas, dataFlujo, facturas] = await Promise.all([
+          resStats.json(),
+          resInsumos.json(),
+          resAlertas.json(),
+          resFlujo.json(),
+          resList.json()
+        ]);
+
+        // 1. Métricas Generales y Concentración
+        gastoTotalGlobal = stats.total_comprado || 0;
+        document.getElementById("kpiTotalGasto").innerText = `$${gastoTotalGlobal.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
+        document.getElementById("kpiTotalFacturas").innerText = stats.cantidad_facturas;
+        document.getElementById("kpiTopProveedor").innerText = (stats.top_proveedores && stats.top_proveedores[0]) ? stats.top_proveedores[0].proveedor : "N/A";
+
+        const contenedorProv = document.getElementById("listaProveedores");
+        contenedorProv.innerHTML = "";
+        if (stats.top_proveedores && stats.top_proveedores.length > 0) {
+          stats.top_proveedores.forEach(p => {
+            const porcentaje = gastoTotalGlobal > 0 ? ((p.total / gastoTotalGlobal) * 100).toFixed(1) : 0;
+            contenedorProv.innerHTML += `
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="font-medium text-slate-700 truncate max-w-[150px]">${p.proveedor}</span>
+                  <span class="font-bold text-slate-800">$${p.total.toFixed(2)} (${porcentaje}%)</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-1.5">
+                  <div class="bg-blue-600 h-1.5 rounded-full" style="width: ${porcentaje}%"></div>
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        // 2. Insumos Críticos
+        const tbInsumos = document.querySelector("#tableInsumos tbody");
+        tbInsumos.innerHTML = "";
+        insumos.forEach(i => {
+          tbInsumos.innerHTML += `
+            <tr class="hover:bg-slate-50">
+              <td class="py-1.5 pr-2 font-medium text-slate-700 truncate max-w-[140px]">${i.producto}</td>
+              <td class="py-1.5 text-center text-slate-500">${i.unidades}</td>
+              <td class="py-1.5 text-right font-bold text-slate-900">$${i.gasto_total.toFixed(2)}</td>
+            </tr>
+          `;
+        });
+
+        // 3. Alertas
+        todasLasAlertasCargadas = alertas;
+        renderizarAlertasBanner();
+
+        // 4. Flujo de Caja
+        const historialFlujo = dataFlujo.historico || [];
+        const promedioFlujo = dataFlujo.promedio_mensual || 0;
+        document.getElementById("promedioDesembolsoBadge").innerText = `Promedio: $${promedioFlujo.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
+
+        let montoUltimoMes = 0;
+        if (historialFlujo.length > 0) {
+          montoUltimoMes = historialFlujo[historialFlujo.length - 1].monto;
+        }
+        document.getElementById("kpiFlujoMes").innerText = `$${montoUltimoMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
+        renderizarGraficoFlujo(historialFlujo, promedioFlujo);
+
+        // 5. Historial de Facturas
+        listaFacturas = facturas;
+        facturasFiltradas = [...listaFacturas];
+        renderizarTabla();
+
+        // 6. Cargar catálogo solo en segundo plano (sin bloquear la pantalla principal)
+        cargarCatalogoMaestro();
+
+      } catch (err) {
+        console.error("Error al cargar datos:", err);
+      }
+    }
+
+    function renderizarGraficoFlujo(datos, promedio) {
+      const ctx = document.getElementById("chartFlujoCaja");
+      if (!ctx) return;
+
+      const labels = datos.map(d => d.periodo);
+      const montos = datos.map(d => d.monto);
+      const facturasCount = datos.map(d => d.cantidad_facturas);
+
+      if (miGraficoFlujo) {
+        miGraficoFlujo.destroy();
+      }
+
+      miGraficoFlujo = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              type: "bar",
+              label: "Desembolso ($)",
+              data: montos,
+              backgroundColor: montos.map(m => m > promedio ? "rgba(239, 68, 68, 0.7)" : "rgba(37, 99, 235, 0.7)"),
+              borderRadius: 6,
+              barThickness: 24,
+            },
+            {
+              type: "line",
+              label: "Línea Promedio",
+              data: labels.map(() => promedio),
+              borderColor: "rgba(100, 116, 139, 0.6)",
+              borderDash: [4, 4],
+              pointRadius: 0,
+              fill: false,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  if (context.dataset.type === "line") {
+                    return ` Promedio mensual: $${context.parsed.y.toFixed(2)}`;
+                  }
+                  const index = context.dataIndex;
+                  return [
+                    ` Total Pagado: $${context.parsed.y.toFixed(2)}`,
+                    ` Facturas: ${facturasCount[index]}`
+                  ];
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: value => `$${value}`,
+                font: { size: 10 }
+              },
+              grid: { color: "rgba(226, 232, 240, 0.5)" }
+            },
+            x: {
+              ticks: { font: { size: 10 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+
+    // CATÁLOGO MAESTRO
+    async function cargarCatalogoMaestro() {
+      try {
+        const res = await fetch(`${API_URL}/productos/catalogo-maestro`);
+        catalogoCompleto = await res.json();
+        document.getElementById("badgeTotalProductos").innerText = catalogoCompleto.length;
+        renderizarTablaCatalogo();
+      } catch (err) {
+        console.error("Error al cargar catálogo maestro:", err);
+      }
+    }
+
+    function renderizarTablaCatalogo() {
+      const q = document.getElementById("filtroTextoCatalogo").value.trim().toLowerCase();
+      const estado = document.getElementById("filtroEstadoCatalogo").value;
+      const tbody = document.querySelector("#tableCatalogoMaestro tbody");
+      tbody.innerHTML = "";
+
+      const filtrados = catalogoCompleto.filter(p => {
+        const coincideTexto = !q || p.producto.toLowerCase().includes(q) || p.proveedores.some(pr => pr.toLowerCase().includes(q));
+        if (!coincideTexto) return false;
+
+        if (estado === "subidas") return p.tipo_variacion === "SUBIDA";
+        if (estado === "ahorros") return p.tipo_variacion === "AHORRO";
+        if (estado === "estables") return p.tipo_variacion === "ESTABLE";
+        return true;
+      });
+
+      if (filtrados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">No se encontraron productos en el catálogo con los filtros aplicados.</td></tr>`;
+        return;
+      }
+
+      filtrados.forEach((prod, index) => {
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="p-3 font-semibold text-slate-800">
+              ${prod.producto}
+              <span class="block text-[11px] text-slate-400 font-normal">Mejor precio en: <strong class="text-emerald-700">${prod.mejor_proveedor}</strong></span>
+            </td>
+            <td class="p-3 text-center text-slate-600 font-mono">${prod.total_compras}</td>
+            <td class="p-3 text-center text-slate-600 font-mono">${prod.unidades_totales}</td>
+            <td class="p-3 text-right font-medium text-slate-700">$${prod.ultimo_precio.toFixed(2)}</td>
+            <td class="p-3 text-right font-bold text-emerald-600">$${prod.precio_min.toFixed(2)}</td>
+            <td class="p-3 text-right font-bold text-slate-700">$${prod.precio_max.toFixed(2)}</td>
+            <td class="p-3 text-right text-blue-600 font-medium">$${prod.precio_promedio.toFixed(2)}</td>
+            <td class="p-3 text-center">
+              ${prod.tipo_variacion === 'SUBIDA' ? `
+                <span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-rose-200">
+                  ▲ +${prod.variacion_pct}% más caro
+                </span>
+              ` : (prod.tipo_variacion === 'AHORRO' ? `
+                <span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px] border border-emerald-200">
+                  ▼ -${prod.variacion_pct}% ahorro
+                </span>
+              ` : `
+                <span class="bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-full text-[10px]">
+                  ✓ Estable
+                </span>
+              `)}
+            </td>
+            <td class="p-3 text-center">
+              <button onclick="toggleFilaHistorialCatalogo(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold cursor-pointer">
+                Ver Compras ▼
+              </button>
+            </td>
+          </tr>
+          
+          <tr id="historial-cat-${index}" class="hidden bg-slate-50/70 border-b">
+            <td colspan="9" class="p-3">
+              <div class="bg-white border rounded-lg p-3">
+                <span class="text-xs font-bold text-slate-700 mb-2 block">Detalle de Compras para: ${prod.producto}</span>
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 border-b text-slate-500">
+                    <tr>
+                      <th class="p-1.5">Fecha</th>
+                      <th class="p-1.5">Factura N°</th>
+                      <th class="p-1.5">Proveedor</th>
+                      <th class="p-1.5">Lote</th>
+                      <th class="p-1.5 text-center">Cant.</th>
+                      <th class="p-1.5 text-right">Precio Unit.</th>
+                      <th class="p-1.5 text-center">% Dcto</th>
+                      <th class="p-1.5 text-right">Total Línea</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${prod.historial.map(h => `
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-1.5 text-slate-500">${h.fecha}</td>
+                        <td class="p-1.5 font-mono text-slate-500">#${h.numero_factura}</td>
+                        <td class="p-1.5 font-semibold text-slate-700">${h.proveedor}</td>
+                        <td class="p-1.5 text-slate-400">${h.lote}</td>
+                        <td class="p-1.5 text-center">${h.cantidad}</td>                         <td class="p-1.5 text-right font-bold text-slate-900">$${h.precio_unitario.toFixed(2)}</td>
+                        <td class="p-1.5 text-center text-amber-600">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '\%' : '-'}</td>                         <td class="p-1.5 text-right text-slate-700 font-medium">$${h.subtotal.toFixed(2)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function toggleFilaHistorialCatalogo(index) {
+      const el = document.getElementById(`historial-cat-${index}`);
+      if (el) el.classList.toggle("hidden");
+    }
+
+    document.getElementById("filtroTextoCatalogo").addEventListener("input", renderizarTablaCatalogo);
+    document.getElementById("filtroEstadoCatalogo").addEventListener("change", renderizarTablaCatalogo);
+
+    // BÚSQUEDA REACTIVA EN TIEMPO REAL
+    let timeoutBusqueda = null;
+
+    document.getElementById("inputBuscarProd").addEventListener("input", (e) => {
+      clearTimeout(timeoutBusqueda);
+      const query = e.target.value.trim();
+
+      if (query.length < 2) {
+        document.getElementById("resBuscadorProd").classList.add("hidden");
+        return;
+      }
+
+      timeoutBusqueda = setTimeout(() => {
+        ejecutarBusquedaReactiva(query);
+      }, 250);
+    });
+
+    async function ejecutarBusquedaReactiva(q) {
+      try {
+        const res = await fetch(`${API_URL}/productos/buscar?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const contenedor = document.getElementById("resBuscadorProd");
+        const listaTarjetas = document.getElementById("contenedorTarjetasProductos");
+        const contador = document.getElementById("contadorResultados");
+
+        if (!data.productos_agrupados || data.productos_agrupados.length === 0) {
+          contador.innerText = `No se encontraron coincidencias para "${q}".`;
+          listaTarjetas.innerHTML = "";
+          contenedor.classList.remove("hidden");
+          return;
+        }
+
+        contador.innerText = `Se encontraron ${data.total_coincidencias} presentaciones para "${q}":`;
+        listaTarjetas.innerHTML = "";
+
+        data.productos_agrupados.forEach((prod, index) => {
+          const compras = prod.historial;
+          const precioMin = prod.precio_min;
+          const precioMax = prod.precio_max;
+          
+          const compraMasBarata = compras.reduce((prev, curr) => (curr.precio_unitario < prev.precio_unitario ? curr : prev), compras[0]);
+          const compraMasCara = compras.reduce((prev, curr) => (curr.precio_unitario > prev.precio_unitario ? curr : prev), compras[0]);
+          
+          const diferenciaCentavos = Math.abs(precioMax - precioMin);
+          const tieneDiscrepancia = diferenciaCentavos >= 0.005 && compras.length > 1;
+          const variacionPorcentual = precioMin > 0 ? (((precioMax - precioMin) / precioMin) * 100).toFixed(1) : 0;
+
+          listaTarjetas.innerHTML += `
+            <div class="border rounded-xl p-4 bg-white shadow-xs transition border-slate-200">
+              
+              <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3 pb-3 border-b border-slate-100">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-bold text-slate-800 text-sm md:text-base">${prod.producto}</h3>
+                    ${tieneDiscrepancia ? `
+                      <span class="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200">
+                        ⚠️ Variación de +${variacionPorcentual}%
+                      </span>
+                    ` : `
+                      <span class="bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-200">
+                        ✓ Precio Estable
+                      </span>
+                    `}
+                  </div>
+                  <span class="text-xs text-slate-400">Total compras: ${prod.veces_comprado} (${prod.unidades_totales} unidades adquiridas)</span>
+                </div>
+
+                <button onclick="toggleHistorialProd(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer">
+                  Auditar Compras ▼
+                </button>
+              </div>
+
+              <!-- BLOQUES CONDICIONALES -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs mb-2">
+                
+                ${tieneDiscrepancia ? `
+                  <div class="bg-emerald-50/70 border border-emerald-200 rounded-lg p-2.5">
+                    <div class="flex justify-between items-center text-[10px] text-emerald-800 font-bold uppercase">
+                      <span>🟢 Compra Más Barata</span>
+                      <span>${compraMasBarata.fecha}</span>                     </div>                     <div class="text-lg font-black text-emerald-700 mt-0.5">$${precioMin.toFixed(2)}</div>
+                    <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasBarata.proveedor}</strong></div>
+                  </div>
+
+                  <div class="bg-rose-50/70 border border-rose-200 rounded-lg p-2.5">
+                    <div class="flex justify-between items-center text-[10px] text-rose-800 font-bold uppercase">
+                      <span>🔴 Compra Más Cara</span>
+                      <span>${compraMasCara.fecha}</span>                     </div>                     <div class="text-lg font-black text-rose-700 mt-0.5">$${precioMax.toFixed(2)}</div>
+                    <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasCara.proveedor}</strong></div>
+                  </div>
+                ` : `
+                  <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 sm:col-span-2">
+                    <div class="flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase">
+                      <span>✓ Precio Fijo / Vigente</span>
+                      <span class="text-emerald-700 font-semibold">Sin sobrecostos</span>
+                    </div>
+                    <div class="text-lg font-black text-slate-800 mt-0.5">$${prod.ultimo_precio.toFixed(2)}</div>
+                    <div class="text-slate-500 truncate mt-0.5">Comprado a: <strong class="text-slate-700">${prod.mejor_proveedor}</strong></div>
+                  </div>
+                `}
+
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                  <span class="text-[10px] text-slate-500 font-bold uppercase block">Promedio Real</span>
+                  <div class="text-lg font-black text-blue-700 mt-0.5">$${prod.precio_promedio.toFixed(2)}</div>
+                  <div class="text-slate-500 mt-0.5 text-[11px]">En ${prod.veces_comprado} factura(s)</div>
+                </div>
+
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                  <span class="text-[10px] text-slate-500 font-bold uppercase block">Última Compra</span>
+                  <div class="text-lg font-black text-slate-800 mt-0.5">$${prod.ultimo_precio.toFixed(2)}</div>
+                  <div class="text-slate-500 mt-0.5 text-[11px] truncate">En: ${compras[0].proveedor}</div>
+                </div>
+
+              </div>
+
+              <div id="historial-prod-${index}" class="hidden mt-3 border-t pt-3 overflow-x-auto">
+                <table class="w-full text-left text-xs bg-white rounded border">
+                  <thead class="bg-slate-100 text-slate-600 border-b">
+                    <tr>
+                      <th class="p-2">Fecha</th>
+                      <th class="p-2">Factura N°</th>
+                      <th class="p-2">Proveedor</th>
+                      <th class="p-2 text-center">Cant.</th>
+                      <th class="p-2 text-right">Precio Facturado</th>
+                      <th class="p-2 text-center">% Dcto</th>
+                      <th class="p-2 text-center">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${compras.map(h => {
+                      const esMinimo = h.precio_unitario === precioMin;
+                      const sobrecosto = precioMin > 0 ? (((h.precio_unitario - precioMin) / precioMin) * 100).toFixed(1) : 0;
+
+                      return `
+                        <tr class="${tieneDiscrepancia && esMinimo ? 'bg-emerald-50/40' : 'hover:bg-slate-50'}">
+                          <td class="p-2 text-slate-500">${h.fecha}</td>
+                          <td class="p-2 font-mono text-slate-500">#${h.numero_factura}</td>
+                          <td class="p-2 font-semibold text-slate-800">${h.proveedor}</td>
+                          <td class="p-2 text-center">${h.cantidad}</td>                           <td class="p-2 text-right font-bold text-slate-900">$${h.precio_unitario.toFixed(2)}</td>
+                          <td class="p-2 text-center text-amber-600 font-medium">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '%' : '-'}</td>
+                          <td class="p-2 text-center">
+                            ${!tieneDiscrepancia ? `
+                              <span class="inline-flex items-center text-slate-600 bg-slate-100 font-medium px-2 py-0.5 rounded text-[10px]">
+                                Normal
+                              </span>
+                            ` : (esMinimo ? `
+                              <span class="inline-flex items-center text-emerald-700 bg-emerald-100/80 font-bold px-2 py-0.5 rounded text-[10px]">
+                                🟢 Mejor Compra
+                              </span>
+                            ` : `
+                              <span class="inline-flex items-center text-rose-700 bg-rose-50 border border-rose-200 font-medium px-2 py-0.5 rounded text-[10px]">
+                                🔴 +${sobrecosto}% más caro
+                              </span>
+                            `)}
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          `;
+        });
+
+        contenedor.classList.remove("hidden");
+      } catch (err) {
+        console.error("Error al consultar insumo:", err);
+      }
+    }
+
+    function toggleHistorialProd(index) {
+      const el = document.getElementById(`historial-prod-${index}`);
+      if (el) el.classList.toggle("hidden");
+    }
+
+    // RENDERIZADO DE ALERTAS
+    function renderizarAlertasBanner() {
+      const contAlertas = document.getElementById("alertaPreciosContenedor");
+      const listaAlertas = document.getElementById("listaAlertas");
+      listaAlertas.innerHTML = "";
+
+      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
+      const alertasActivas = todasLasAlertasCargadas.filter(a => !descartadas.includes(a.id_alerta));
+
+      if (alertasActivas && alertasActivas.length > 0) {
+        contAlertas.classList.remove("hidden");
+        alertasActivas.forEach(a => {
+          const esSubida = a.tipo === "INCREMENTO";
+
+          listaAlertas.innerHTML += `
+            <div id="alerta-card-${a.id_alerta}" class="p-3 rounded-lg border ${esSubida ? 'bg-rose-50/70 border-rose-200' : 'bg-emerald-50/70 border-emerald-200'} shadow-xs flex flex-col justify-between">
+              <div>
+                <div class="flex justify-between items-start gap-2">
+                  <span class="font-bold text-slate-800 text-xs">${a.producto}</span>
+                  <span class="font-bold px-1.5 py-0.5 rounded text-[11px] ${esSubida ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}">
+                    ${esSubida ? `▲ +$${a.diferencia_dinero.toFixed(2)} (+${a.porcentaje}%)` : `▼ -$${a.diferencia_dinero.toFixed(2)} (-${a.porcentaje}%)`}
+                  </span>
+                </div>
+                <div class="text-[11px] text-slate-500 mt-1">
+                  Proveedor: <strong class="text-slate-700">${a.proveedor}</strong>
+                  ${a.proveedor !== a.proveedor_anterior ? `<span class="text-slate-400"> (antes: ${a.proveedor_anterior})</span>` : ""}
+                </div>
+                <div class="mt-1 text-xs">
+                  <span>Antes: $${a.precio_anterior.toFixed(2)} → <strong class="${esSubida ? 'text-rose-600' : 'text-emerald-700'}">Ahora: $${a.precio_actual.toFixed(2)}</strong></span>
+                </div>
+              </div>
+
+              <div class="mt-2.5 pt-2 border-t ${esSubida ? 'border-rose-200/60' : 'border-emerald-200/60'} flex justify-between items-center text-[11px]">
+                <span class="text-slate-400 text-[10px]">${a.fecha_actual}</span>
+                <button onclick="descartarAlerta('${a.id_alerta}')" class="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer">
+                  Entendido / Descartar ✕
+                </button>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        contAlertas.classList.add("hidden");
+      }
+    }
+
+    function descartarAlerta(idAlerta) {
+      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
+      if (!descartadas.includes(idAlerta)) {
+        descartadas.push(idAlerta);
+        localStorage.setItem("alertas_descartadas", JSON.stringify(descartadas));
+      }
+      renderizarAlertasBanner();
+    }
+
+    // MODAL HISTÓRICO DE ALERTAS
+    function abrirModalHistoricoAlertas() {
+      const tbody = document.querySelector("#tableModalAlertas tbody");
+      tbody.innerHTML = "";
+      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
+
+      document.getElementById("contadorAlertasModal").innerText = `Total registros históricos: ${todasLasAlertasCargadas.length}`;
+
+      if (todasLasAlertasCargadas.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">No hay variaciones de precios registradas.</td></tr>`;
+      } else {
+        todasLasAlertasCargadas.forEach(a => {
+          const estaDescartada = descartadas.includes(a.id_alerta);
+          const esSubida = a.tipo === "INCREMENTO";
+
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+              <td class="p-2.5 text-slate-500">${a.fecha_actual}</td>
+              <td class="p-2.5 font-medium text-slate-800">${a.producto}</td>
+              <td class="p-2.5 text-slate-600">${a.proveedor}</td>
+              <td class="p-2.5 text-right text-slate-500">$${a.precio_anterior.toFixed(2)}</td>
+              <td class="p-2.5 text-right font-bold text-slate-800">$${a.precio_actual.toFixed(2)}</td>
+              <td class="p-2.5 text-center font-bold ${esSubida ? 'text-rose-600' : 'text-emerald-600'}">
+                ${esSubida ? '+' : '-'}$${a.diferencia_dinero.toFixed(2)} (${a.porcentaje}%)
+              </td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${estaDescartada ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-800'}">
+                  ${estaDescartada ? 'Archivada' : 'Visible en panel'}
+                </span>
+              </td>
+              <td class="p-2.5 text-center">
+                ${estaDescartada ? `
+                  <button onclick="restaurarAlertaIndividual('${a.id_alerta}')" class="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer">
+                    ↩ Restaurar
+                  </button>
+                ` : `
+                  <button onclick="descartarAlerta('${a.id_alerta}'); abrirModalHistoricoAlertas();" class="text-slate-400 hover:text-slate-600 cursor-pointer">
+                    Ocultar
+                  </button>
+                `}
+              </td>
+            </tr>
+          `;
+        });
+      }
+
+      document.getElementById("modalHistoricoAlertas").classList.remove("hidden");
+    }
+
+    function cerrarModalHistoricoAlertas() {
+      document.getElementById("modalHistoricoAlertas").classList.add("hidden");
+    }
+
+    function restaurarAlertaIndividual(idAlerta) {
+      let descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
+      descartadas = descartadas.filter(id => id !== idAlerta);
+      localStorage.setItem("alertas_descartadas", JSON.stringify(descartadas));
+      renderizarAlertasBanner();
+      abrirModalHistoricoAlertas();
+    }
+
+    function restaurarTodasLasAlertas() {
+      localStorage.removeItem("alertas_descartadas");
+      renderizarAlertasBanner();
+      abrirModalHistoricoAlertas();
+    }
+
+    // TABLA DE FACTURAS Y FILTROS
+    function renderizarTabla() {
+      const tbody = document.querySelector("#tableHistorial tbody");
+      tbody.innerHTML = "";
+
+      if (facturasFiltradas.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">No hay facturas registradas en este criterio.</td></tr>`;
+        document.getElementById("pageInfo").innerText = "Página 0 de 0";
+        document.getElementById("btnPrev").disabled = true;
+        document.getElementById("btnNext").disabled = true;
+        return;
+      }
+
+      const totalPages = Math.ceil(facturasFiltradas.length / pageSize) || 1;
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      const startIndex = (currentPage - 1) * pageSize;
+      const facturasPagina = facturasFiltradas.slice(startIndex, startIndex + pageSize);
+
+      facturasPagina.forEach(f => {
+        const estaPagado = f.estado_pago === "Pagado";
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="p-3 text-slate-400 font-mono text-xs">#${f.id}</td>
+            <td class="p-3 font-semibold text-slate-800">
+              ${f.proveedor}
+              ${f.comentario ? `<span class="block text-[11px] text-slate-500 font-normal italic truncate max-w-xs" title="${f.comentario}">💬 ${f.comentario}</span>` : ""}
+            </td>
+            <td class="p-3 text-slate-600">${f.numero_factura}</td>
+            <td class="p-3 text-slate-500">${f.fecha_emision}</td>
+            
+            <!-- Estado de Pago Interactivo -->
+            <td class="p-3 text-center">
+              <button onclick="alternarEstadoPago(${f.id}, '${f.estado_pago}')" 
+                      class="px-2.5 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        estaPagado 
+                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300' 
+                          : 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                      }">
+                ${estaPagado ? '✓ Pagado' : '⏳ Pendiente'}
+              </button>
+            </td>
+
+            <td class="p-3 text-center">
+              <button onclick="abrirModal(${f.id})" class="bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2.5 py-1 rounded text-xs transition cursor-pointer">
+                🔍 Ver ${f.items_count} ítems
+              </button>
+            </td>
+            <td class="p-3 text-right font-bold text-slate-900">$${f.total.toFixed(2)}</td>
+            <td class="p-3 text-center">
+              <div class="flex justify-center items-center gap-1.5">
+                <button onclick="abrirModalComentario(${f.id}, '${f.comentario || ''}')" title="Agregar o editar nota" class="text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+                  💬 Nota
+                </button>
+                <button onclick="abrirModalEditar(${f.id})" class="text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+                  ✏️
+                </button>
+                <button onclick="eliminarFactura(${f.id})" class="text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+                  🗑️
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      document.getElementById("pageInfo").innerText = `Página ${currentPage} de ${totalPages} (${facturasFiltradas.length} registros)`;
+      document.getElementById("btnPrev").disabled = (currentPage === 1);
+      document.getElementById("btnNext").disabled = (currentPage === totalPages);
+    }
+
+    // ACCIONES DE TESORERÍA (PAGADO / NOTA)
+    async function alternarEstadoPago(facturaId, estadoActual) {
+      const nuevoEstado = estadoActual === "Pagado" ? "Pendiente" : "Pagado";
+      try {
+        const res = await fetch(`${API_URL}/facturas/${facturaId}/estado-pago`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ estado_pago: nuevoEstado })
+        });
+        if (!res.ok) throw new Error("No se pudo actualizar el estado de pago.");
+        await cargarTodo();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function abrirModalComentario(facturaId, comentarioActual) {
+      const nota = prompt("Escribe una nota o referencia para esta factura (ej: Transferencia Banco Pichincha #4582, Cheque, Pago parcial):", comentarioActual);
+      if (nota === null) return;
+
+      try {
+        const factura = listaFacturas.find(f => f.id === facturaId);
+        const res = await fetch(`${API_URL}/facturas/${facturaId}/estado-pago`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            estado_pago: factura ? factura.estado_pago : "Pendiente",
+            comentario: nota 
+          })
+        });
+        if (!res.ok) throw new Error("Error al guardar la nota.");
+        await cargarTodo();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    document.getElementById("btnFiltrarFecha").addEventListener("click", () => {
+      const fDesde = document.getElementById("filtroDesde").value;
+      const fHasta = document.getElementById("filtroHasta").value;
+
+      facturasFiltradas = listaFacturas.filter(f => {
+        if (!f.fecha_emision || f.fecha_emision === "S/F") return false;
+        if (fDesde && f.fecha_emision < fDesde) return false;
+        if (fHasta && f.fecha_emision > fHasta) return false;
+        return true;
+      });
+
+      currentPage = 1;
+      renderizarTabla();
+    });
+
+    document.getElementById("btnLimpiarFecha").addEventListener("click", () => {
+      document.getElementById("filtroDesde").value = "";
+      document.getElementById("filtroHasta").value = "";
+      facturasFiltradas = [...listaFacturas];
+      currentPage = 1;
+      renderizarTabla();
+    });
+
+    // MODAL DE DETALLE
+    function abrirModal(facturaId) {
+      const factura = listaFacturas.find(f => f.id === facturaId);
+      if (!factura) return;
+
+      document.getElementById("modalTitulo").innerText = `Factura N° ${factura.numero_factura}`;
+      document.getElementById("modalSubtitulo").innerText = `Proveedor: ${factura.proveedor} | Emisión: ${factura.fecha_emision || "N/A"} | Estado: ${factura.estado_pago}`;
+
+      const tbody = document.querySelector("#tableModalItems tbody");
+      tbody.innerHTML = "";
+
+      if (!factura.items || factura.items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin líneas registradas.</td></tr>`;
+      } else {
+        factura.items.forEach(it => {
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+              <td class="p-2.5 font-medium text-slate-700">
+                ${it.descripcion}
+                ${it.lote ? `<span class="block text-[10px] text-slate-400">Lote: ${it.lote}</span>` : ""}
+              </td>
+              <td class="p-2.5 text-center text-slate-600">${it.cantidad}</td>
+              <td class="p-2.5 text-right text-slate-500">$${it.precio_unitario.toFixed(2)}</td>
+              <td class="p-2.5 text-center text-amber-600 font-semibold">${it.porcentaje_descuento > 0 ? it.porcentaje_descuento + '%' : '-'}</td>
+              <td class="p-2.5 text-right font-bold text-slate-900">$${it.subtotal.toFixed(2)}</td>
+            </tr>
+          `;
+        });
+      }
+
+      document.getElementById("modalTotal").innerHTML = `
+        <div class="text-xs text-right text-slate-500 font-normal space-y-0.5 mb-2">
+          <div>Subtotal Bruto: $${(factura.subtotal || 0).toFixed(2)}</div>
+          ${factura.descuento_total > 0 ? `<div class="text-amber-600 font-medium">Descuento: -$${factura.descuento_total.toFixed(2)}</div>` : ""}
+          <div>Base IVA: $${(factura.base_iva_grabada || factura.subtotal || 0).toFixed(2)}</div>
+          <div>IVA Liquidado: $${(factura.impuestos || 0).toFixed(2)}</div>
+          ${factura.comentario ? `<div class="text-blue-600 italic font-medium pt-1">Nota: ${factura.comentario}</div>` : ""}
+        </div>
+        <div class="text-xl font-bold text-emerald-600 border-t pt-1">
+          Total: $${factura.total.toFixed(2)}
+        </div>
+      `;
+
+      document.getElementById("modalDetalle").classList.remove("hidden");
+    }
+
+    function cerrarModal() {
+      document.getElementById("modalDetalle").classList.add("hidden");
+    }
+
+    // MODAL DE EDICIÓN
+    function abrirModalEditar(facturaId) {
+      const factura = listaFacturas.find(f => f.id === facturaId);
+      if (!factura) return;
+
+      facturaEnEdicionId = facturaId;
+      document.getElementById("editNumFactura").value = factura.numero_factura;
+      document.getElementById("editFechaEmision").value = factura.fecha_emision !== "S/F" ? factura.fecha_emision : "";
+
+      const tbody = document.querySelector("#tableEditItems tbody");
+      tbody.innerHTML = "";
+
+      factura.items.forEach(it => {
+        agregarFilaEdicion(it.descripcion, it.cantidad, it.precio_unitario, it.porcentaje_descuento);
+      });
+
+      document.getElementById("modalEditar").classList.remove("hidden");
+    }
+
+    function agregarFilaEdicion(desc = "", cant = 1, precio = 0.0, dcto = 0.0) {
+      const tbody = document.querySelector("#tableEditItems tbody");
+      const tr = document.createElement("tr");
+      tr.className = "hover:bg-slate-50";
+      tr.innerHTML = `
+        <td class="p-2"><input type="text" class="edit-desc w-full border rounded p-1 text-xs" value="${desc}"></td>
+        <td class="p-2"><input type="number" step="any" class="edit-cant w-full border rounded p-1 text-xs text-center" value="${cant}"></td>
+        <td class="p-2"><input type="number" step="0.01" class="edit-precio w-full border rounded p-1 text-xs text-right" value="${precio}"></td>
+        <td class="p-2"><input type="number" step="0.1" class="edit-dcto w-full border rounded p-1 text-xs text-center" value="${dcto}"></td>
+        <td class="p-2 text-center">
+          <button onclick="this.closest('tr').remove()" class="text-rose-500 hover:text-rose-700 font-bold cursor-pointer">&times;</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    function cerrarModalEditar() {
+      document.getElementById("modalEditar").classList.add("hidden");
+      facturaEnEdicionId = null;
+    }
+
+    document.getElementById("btnGuardarEdicion").addEventListener("click", async () => {
+      if (!facturaEnEdicionId) return;
+
+      const numFactura = document.getElementById("editNumFactura").value.trim();
+      const fecha = document.getElementById("editFechaEmision").value;
+      const filas = document.querySelectorAll("#tableEditItems tbody tr");
+
+      const itemsActualizados = [];
+      filas.forEach(r => {
+        const desc = r.querySelector(".edit-desc").value.trim();
+        const cant = parseFloat(r.querySelector(".edit-cant").value) || 0;
+        const precio = parseFloat(r.querySelector(".edit-precio").value) || 0;
+        const dcto = parseFloat(r.querySelector(".edit-dcto").value) || 0;
+
+        if (desc.length > 0 && cant > 0) {
+          itemsActualizados.push({
+            descripcion: desc,
+            cantidad: cant,
+            precio_unitario: precio,
+            porcentaje_descuento: dcto
+          });
+        }
+      });
+
+      if (itemsActualizados.length === 0) {
+        alert("La factura debe tener al menos un producto válido.");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/facturas/${facturaEnEdicionId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            numero_factura: numFactura,
+            fecha_emision: fecha,
+            items: itemsActualizados
+          })
+        });
+
+        if (!res.ok) throw new Error("No se pudo actualizar la factura");
+
+        cerrarModalEditar();
+        await cargarTodo();
+        alert("¡Factura actualizada con éxito!");
+      } catch (err) {
+        alert("Error al actualizar: " + err.message);
+      }
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        cerrarModal();
+        cerrarModalEditar();
+        cerrarModalHistoricoAlertas();
+      }
+    });
+
+    async function eliminarFactura(id) {
+      if (!confirm(`¿Eliminar la factura #${id}? Esta acción es permanente.`)) return;
+      try {
+        const res = await fetch(`${API_URL}/facturas/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Error al eliminar");
+        await cargarTodo();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    document.getElementById("btnPrev").addEventListener("click", () => {
+      if (currentPage > 1) { currentPage--; renderizarTabla(); }
+    });
+    document.getElementById("btnNext").addEventListener("click", () => {
+      const totalPages = Math.ceil(facturasFiltradas.length / pageSize);
+      if (currentPage < totalPages) { currentPage++; renderizarTabla(); }
+    });
+    document.getElementById("itemsPerPage").addEventListener("change", (e) => {
+      pageSize = parseInt(e.target.value);
+      currentPage = 1;
+      renderizarTabla();
+    });
+
+    window.addEventListener("DOMContentLoaded", cargarTodo);
+  </script>
+</body>
+</html>

@@ -1,5 +1,31 @@
+# Entornos virtuales y dependencias
 backend/venv/
-backend/.env
-backend/*.db
+venv/
+env/
 __pycache__/
-.vscode/
+*.pyc
+
+# Variables de entorno y bases de datos locales
+backend/.env
+.env
+backend/*.db
+*.db
+backend/error_log.txt
+
+# Artefactos de compilación (PyInstaller)
+build/
+dist/
+*.spec
+backend/build/
+backend/dist/
+backend/*.spec
+
+# Archivos de sistema e instaladores locales
+desktop.ini
+*/desktop.ini
+*.exe
+*.iss
+
+# Scripts de arranque locales (opcional si no quieres compartirlos)
+# *.bat
+# *.vbs

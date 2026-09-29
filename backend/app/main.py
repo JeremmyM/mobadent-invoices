@@ -1,10 +1,13 @@
 import os
+import sys
 from datetime import datetime, timedelta
 from typing import List, Optional
 from collections import defaultdict
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -13,7 +16,7 @@ from . import models
 from .schemas import FacturaExtraccionAI
 from .ai_extractor import procesar_documento_factura
 
-# Crear tablas si no existen
+# Crear tablas automáticamente en Neon PostgreSQL si no existen
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Mobadent Invoices API")
@@ -26,7 +29,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- ESQUEMAS DE VALIDACIÓN Y EDICIÓN ---
+# --- DETECCIÓN Y SERVICIO DE ARCHIVOS FRONTEND (COMPATIBLE CON .EXE Y LOCAL) ---
+if getattr(sys, 'frozen', False):
+    # Si corre empaquetado en el instalador / .exe con PyInstaller
+    base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    frontend_dir = os.path.join(base_dir, "frontend")
+    if not os.path.exists(frontend_dir):
+        frontend_dir = os.path.join(os.path.dirname(sys.executable), "frontend")
+else:
+    # Si corre en modo desarrollo normal
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend"))
+
+if os.path.exists(frontend_dir):
+    app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+@app.get("/")
+def ruta_raiz():
+    return RedirectResponse(url="/frontend/dashboard.html")
+
+
+# --- ESQUEMAS ---
 class LineaUpdateSchema(BaseModel):
     descripcion: str
     lote: Optional[str] = None
@@ -48,7 +70,7 @@ class FacturaGuardarPayload(FacturaExtraccionAI):
     comentario: Optional[str] = ""
 
 
-# --- ENDPOINTS DE FACTURACIÓN ---
+# --- ENDPOINTS API ---
 
 @app.post("/api/facturas/analizar", response_model=FacturaExtraccionAI)
 async def analizar_factura(file: UploadFile = File(...)):
@@ -127,8 +149,8 @@ def listar_facturas(db: Session = Depends(get_db)):
             "numero_factura": f.numero_factura,
             "numero_autorizacion": f.numero_autorizacion,
             "fecha_emision": str(f.fecha_emision) if f.fecha_emision else "S/F",
-            "estado_pago": f.estado_pago or "Pendiente",
-            "comentario": f.comentario or "",
+            "estado_pago": getattr(f, "estado_pago", "Pendiente") or "Pendiente",
+            "comentario": getattr(f, "comentario", "") or "",
             "subtotal": f.subtotal,
             "descuento_total": f.descuento_total,
             "base_iva_0": f.base_iva_0,
@@ -518,10 +540,3 @@ def obtener_catalogo_maestro(db: Session = Depends(get_db)):
 
     catalogo.sort(key=lambda x: x["producto"].upper())
     return catalogo
-
-import os
-from fastapi.staticfiles import StaticFiles
-
-frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend"))
-if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")

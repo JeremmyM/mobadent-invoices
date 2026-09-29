@@ -1,19 +1,16 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
+from .config import DATABASE_URL
 
-# Si existe una variable de entorno la usa, de lo contrario crea/usa SQLite local
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mobadent.db")
+if not DATABASE_URL:
+    raise RuntimeError("ERROR: DATABASE_URL no está configurada en el archivo .env.")
 
-# Ajuste necesario para SQLite en FastAPI/Uvicorn
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-else:
-    # Por si alguna vez vuelves a conectar una base PostgreSQL externa
-    engine = create_engine(DATABASE_URL)
+# Pool de conexiones optimizado para Neon PostgreSQL
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=300
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

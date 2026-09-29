@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mobadent - Registro y Escaneo de Facturas</title>
+  <!-- Ícono para la barra de tareas y ventana superior -->
+  <link rel="icon" type="image/x-icon" href="/frontend/app.ico">
+  <link rel="shortcut icon" href="/frontend/app.ico">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
@@ -12,7 +15,7 @@
     <!-- Encabezado -->
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 border-b pb-4">
       <div>
-        <h1 class="text-2xl font-black text-blue-700">Mobadent Invoice Hub</h1>
+        <h1 class="text-2xl font-black text-blue-700">Mobadent Invoices</h1>
         <p class="text-xs text-slate-500">Módulo de captura inteligente y registro manual de compras</p>
       </div>
       <a href="dashboard.html" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded-lg text-xs shadow transition flex items-center gap-1.5">
@@ -23,7 +26,7 @@
     <!-- Pestañas de Modo: IA vs Manual -->
     <div class="flex border-b border-slate-200 mb-6 gap-3 text-xs font-bold">
       <button id="tabBtnIA" onclick="cambiarModo('ia')" class="pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5">
-        Escanear con IA (Foto / PDF)
+        Escanear (Foto / PDF)
       </button>
       <button id="tabBtnManual" onclick="cambiarModo('manual')" class="pb-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-1.5">
         ✍️ Ingreso Manual Directo (Sin IA)
@@ -132,6 +135,21 @@
         </div>
       </div>
 
+      <!-- Estado de pago y notas -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-600 mb-1">Estado de Pago:</label>
+          <select id="campoEstadoPago" class="w-full border rounded-lg p-2 font-medium bg-white focus:ring-2 focus:ring-blue-500">
+            <option value="Pendiente">⏳ Pendiente</option>
+            <option value="Pagado">✓ Pagado</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block font-semibold text-slate-600 mb-1">Nota / Comentario de Factura (Opcional):</label>
+          <input type="text" id="campoComentario" placeholder="Ej: Transferencia Banco Pichincha / Pendiente retención" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+
       <!-- Tabla de Insumos -->
       <div class="flex justify-between items-center mb-2">
         <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Detalle de Insumos Dentales</span>
@@ -192,11 +210,13 @@
   </div>
 
   <script>
-    const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+    // Conexión robusta: detecta automáticamente si se abre como archivo local (file://) o vía web
+    const hostActual = window.location.hostname && window.location.hostname !== "" ? window.location.hostname : "localhost";
+    const API_URL = `http://${hostActual}:8000/api`;
 
     let archivoActual = null;
     let anguloRotacion = 0;
-    let modoIngreso = "ia"; // "ia" o "manual"
+    let modoIngreso = "ia";
 
     const inputCamara = document.getElementById("inputCamara");
     const inputArchivo = document.getElementById("inputArchivo");
@@ -205,7 +225,6 @@
     const pdfPreviewMsg = document.getElementById("pdfPreviewMsg");
     const nombreArchivoTxt = document.getElementById("nombreArchivoTxt");
 
-    // Control de Pestañas
     function cambiarModo(modo) {
       modoIngreso = modo;
       const tabIA = document.getElementById("tabBtnIA");
@@ -223,7 +242,6 @@
         document.getElementById("tituloFormulario").innerText = "Ingreso Manual de Factura";
         document.getElementById("subtituloFormulario").innerText = "Escribe directamente los datos de tu factura física o digital";
         
-        // Si no hay productos, poner 2 filas en blanco listas para escribir
         const tbody = document.querySelector("#tablaItemsVerificacion tbody");
         if (tbody.children.length === 0) {
           agregarFilaVerificacion("", "", 1, 0.0, 0.0, 0.0);
@@ -241,7 +259,6 @@
       }
     }
 
-    // Manejo de carga de archivos
     inputCamara.addEventListener("change", (e) => manejarArchivo(e.target.files[0]));
     inputArchivo.addEventListener("change", (e) => manejarArchivo(e.target.files[0]));
 
@@ -279,7 +296,6 @@
       reiniciarEscaneo();
     });
 
-    // Envío a Gemini
     document.getElementById("btnProcesarIA").addEventListener("click", async () => {
       if (!archivoActual) return;
 
@@ -389,7 +405,6 @@
       autoCalcularBasesDesdeItems();
     }
 
-    // Auto-cálculo de impuestos cuando se ingresa manualmente
     function autoCalcularBasesDesdeItems() {
       const rows = document.querySelectorAll("#tablaItemsVerificacion tbody tr");
       let suma = 0;
@@ -402,7 +417,7 @@
 
       if (modoIngreso === "manual") {
         document.getElementById("campoBaseGravada").value = suma.toFixed(2);
-        const iva = suma * 0.15; // 15% IVA estándar
+        const iva = suma * 0.15;
         document.getElementById("campoIva").value = iva.toFixed(2);
         document.getElementById("campoTotal").value = (suma + iva).toFixed(2);
       }
@@ -410,7 +425,6 @@
       evaluarCuadreAritmetico();
     }
 
-    // Semáforo Contable Inteligente
     function evaluarCuadreAritmetico() {
       const rows = document.querySelectorAll("#tablaItemsVerificacion tbody tr");
       let sumaSubtotales = 0;
@@ -440,7 +454,6 @@
       }
     }
 
-    // Verificación de Duplicados
     async function verificarFacturaDuplicada(numFactura, proveedor) {
       if (!numFactura) return;
       try {
@@ -463,7 +476,6 @@
       }
     }
 
-    // Guardar Factura Definitiva
     document.getElementById("btnGuardarDefinitivo").addEventListener("click", async () => {
       const numFac = document.getElementById("campoNumeroFactura").value.trim();
       const prov = document.getElementById("campoProveedor").value.trim();
@@ -510,6 +522,8 @@
         numero_factura: numFac,
         numero_autorizacion: document.getElementById("campoAutorizacion").value.trim(),
         fecha_emision: document.getElementById("campoFecha").value || null,
+        estado_pago: document.getElementById("campoEstadoPago").value,
+        comentario: document.getElementById("campoComentario").value.trim(),
         base_iva_0: parseFloat(document.getElementById("campoBase0").value) || 0.0,
         base_iva_grabada: parseFloat(document.getElementById("campoBaseGravada").value) || subtotalGeneral,
         porcentaje_iva: 15.0,

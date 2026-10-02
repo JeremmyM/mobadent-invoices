@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Mobadent - Facturas & Catálogo</title>
+  <link rel="icon" type="image/x-icon" href="app.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="config.js"></script>
+  <script src="db.js"></script>
+  <style>
+    :root {
+      --safe-top: env(safe-area-inset-top, 20px);
+      --safe-bottom: env(safe-area-inset-bottom, 24px);
+    }
+    body {
+      padding-top: max(var(--safe-top), 20px);
+      padding-bottom: calc(var(--safe-bottom) + 105px);
+    }
+    .nav-bar-flotante {
+      bottom: max(var(--safe-bottom), 18px);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased selection:bg-blue-600 selection:text-white min-h-screen">
+
+  <!-- Barra Superior -->
+  <header class="sticky top-0 z-30 bg-slate-100/90 backdrop-blur-md px-5 py-3.5 mb-2">
+    <div class="flex items-center justify-between max-w-md mx-auto">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl shadow-md shadow-blue-500/20">
+          🦷
+        </div>
+        <div>
+          <h1 class="text-lg font-black text-slate-900 leading-tight">Mobadent</h1>
+          <p class="text-[11px] text-slate-400 font-medium">Control Dental & Auditoría</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="badgeEstadoConexion" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 shadow-2xs">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Conectando...
+        </span>
+        <button onclick="recargarDatosActivos()" class="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200/80 active:scale-95 text-slate-600 flex items-center justify-center text-xs transition">
+          🔄
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="px-5 space-y-4 max-w-md mx-auto">
+
+    <div id="cajaMensajeError" class="hidden p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 shadow-xs"></div>
+
+    <!-- ========================================== -->
+    <!-- VISTA 1: HISTORIAL DE FACTURAS -->
+    <!-- ========================================== -->
+    <div id="seccionFacturas" class="space-y-4">
+      
+      <!-- Selector de Período -->
+      <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Período de Análisis</span>
+          <span id="lblRangoActivoTxt" class="text-[10px] text-blue-700 font-bold bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">Todo el Historial</span>
+        </div>
+        
+        <div class="grid grid-cols-4 gap-1.5 text-[11px] font-bold">
+          <button onclick="setPeriodo('mes')" id="btnPerMes" class="py-2 rounded-xl border border-slate-200 text-slate-600 active:scale-95 transition text-center bg-slate-50">Mes</button>
+          <button onclick="setPeriodo('trimestre')" id="btnPerTrimestre" class="py-2 rounded-xl border border-slate-200 text-slate-600 active:scale-95 transition text-center bg-slate-50">3 Meses</button>
+          <button onclick="setPeriodo('anio')" id="btnPerAnio" class="py-2 rounded-xl border border-slate-200 text-slate-600 active:scale-95 transition text-center bg-slate-50">Año</button>
+          <button onclick="setPeriodo('todos')" id="btnPerTodos" class="py-2 rounded-xl bg-blue-600 text-white font-bold text-center shadow-sm shadow-blue-500/30">Todo</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+          <div>
+            <label class="text-[10px] font-bold text-slate-400 block mb-1">Desde:</label>
+            <input type="date" id="filtroDesde" onchange="aplicarFiltroFechas()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="text-[10px] font-bold text-slate-400 block mb-1">Hasta:</label>
+            <input type="date" id="filtroHasta" onchange="aplicarFiltroFechas()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen Métricas -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gasto Total</span>
+          <div id="kpiTotalGasto" class="text-2xl font-black text-slate-900 mt-1 tracking-tight">$0.00</div>
+        </div>
+
+        <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Comprobantes</span>
+          <div id="kpiTotalFacturas" class="text-2xl font-black text-blue-600 mt-1 tracking-tight">0</div>
+        </div>
+
+        <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs col-span-2">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proveedor Principal</span>
+            <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">Mayor volumen</span>
+          </div>
+          <div id="kpiTopProveedor" class="text-base font-black text-slate-800 mt-1.5 truncate">N/A</div>
+        </div>
+      </div>
+
+      <!-- Buscador -->
+      <div class="relative">
+        <input type="text" id="filtroFacturasInput" placeholder="Buscar por proveedor o N° de factura..." 
+               class="w-full bg-white border border-slate-200/80 rounded-2xl pl-10 pr-4 py-3 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-xs font-medium placeholder-slate-400">
+        <span class="absolute left-3.5 top-3.5 text-slate-400 text-sm">🔍</span>
+      </div>
+
+      <!-- Listado de Facturas Cards -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Comprobantes Archivados</h2>
+          <span id="contadorFacturasTxt" class="text-xs font-bold text-slate-500">0 facturas</span>
+        </div>
+        <div id="contenedorFacturasCards" class="space-y-3"></div>
+      </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- VISTA 2: CATÁLOGO DE PRECIOS & PRODUCTOS -->
+    <!-- ========================================== -->
+    <div id="seccionCatalogo" class="hidden space-y-4">
+      
+      <div class="bg-blue-600 text-white p-5 rounded-3xl shadow-sm space-y-1">
+        <div class="flex justify-between items-center">
+          <h2 class="text-base font-black tracking-tight">Catálogo de Insumos</h2>
+          <span id="badgeTotalItemsCatalogo" class="text-[11px] font-bold bg-white/20 px-3 py-0.5 rounded-full">0 productos</span>
+        </div>
+        <p class="text-xs text-blue-100">Consulta los precios mínimos, promedios y proveedores históricos.</p>
+      </div>
+
+      <!-- Buscador Catálogo -->
+      <div class="space-y-2">
+        <div class="relative">
+          <input type="text" id="filtroCatalogoInput" placeholder="Buscar insumo dental..." 
+                 class="w-full bg-white border border-slate-200/80 rounded-2xl pl-10 pr-4 py-3 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-xs font-medium placeholder-slate-400">
+          <span class="absolute left-3.5 top-3.5 text-slate-400 text-sm">🔍</span>
+        </div>
+
+        <select id="filtroCategoriaSelect" class="w-full bg-white border border-slate-200/80 rounded-2xl px-3 py-2.5 text-xs text-slate-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-xs">
+          <option value="todas">Todas las categorías</option>
+          <option value="Restauración & Estética">Restauración & Estética</option>
+          <option value="Endodoncia">Endodoncia</option>
+          <option value="Ortodoncia">Ortodoncia</option>
+          <option value="Periodoncia & Profilaxis">Periodoncia & Profilaxis</option>
+          <option value="Impresión & Modelos">Impresión & Modelos</option>
+          <option value="Prótesis & Laboratorio">Prótesis & Laboratorio</option>
+          <option value="Instrumental & Fresas">Instrumental & Fresas</option>
+          <option value="Bioseguridad & Esterilización">Bioseguridad & Esterilización</option>
+          <option value="Equipos & Repuestos">Equipos & Repuestos</option>
+          <option value="General">General</option>
+        </select>
+      </div>
+
+      <div id="contenedorCatalogoCards" class="space-y-3"></div>
+
+    </div>
+
+  </main>
+
+  <!-- MODAL: VER PRODUCTOS -->
+  <div id="modalDetalleFactura" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 max-h-[85vh] flex flex-col">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
+        <div>
+          <h3 class="text-sm font-bold text-slate-900" id="modalDetalleTitulo">Detalle de Factura</h3>
+          <p class="text-[11px] text-slate-400 font-medium" id="modalDetalleSubtitulo"></p>
+        </div>
+        <button onclick="cerrarModalDetalle()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none">&times;</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 space-y-2 pr-1" id="modalDetalleListaItems"></div>
+
+      <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-sm font-bold">
+        <span class="text-slate-500">Total Comprobante:</span>
+        <span class="text-slate-900 text-lg font-black" id="modalDetalleTotalTxt">$0.00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR FACTURA -->
+  <div id="modalEditarFactura" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 max-h-[85vh] flex flex-col">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+        <div>
+          <h3 class="text-sm font-bold text-slate-900">Editar Comprobante</h3>
+          <p class="text-[11px] text-slate-400">Modifica número, fecha o monto</p>
+        </div>
+        <button onclick="cerrarModalEditar()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs flex-1 overflow-y-auto">
+        <div>
+          <label class="block font-bold text-slate-500 mb-1">N° Factura:</label>
+          <input type="text" id="editNumFactura" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-mono text-slate-800">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-500 mb-1">Fecha de Emisión:</label>
+          <input type="date" id="editFechaEmision" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-800">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-500 mb-1">Total ($):</label>
+          <input type="number" step="0.01" id="editTotal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-900">
+        </div>
+        <div>
+          <label class="block font-bold text-slate-500 mb-1">Nota o Comentario:</label>
+          <input type="text" id="editComentario" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-800">
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-3">
+        <button onclick="cerrarModalEditar()" class="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600">Cancelar</button>
+        <button onclick="guardarEdicionFactura()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm shadow-blue-500/30">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ACTUALIZACIÓN AUTOMÁTICA -->
+  <div id="modalActualizacion" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-5 z-50">
+    <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4">
+      <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-3xl mx-auto flex items-center justify-center text-3xl shadow-inner">
+        🚀
+      </div>
+      <div>
+        <h3 class="text-base font-black text-slate-900">¡Nueva versión disponible!</h3>
+        <p class="text-xs text-blue-600 font-bold mt-0.5" id="txtNumeroVersion">Versión 1.1.0</p>
+      </div>
+      <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 text-left">
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Novedades de la actualización:</span>
+        <p class="text-xs text-slate-700 whitespace-pre-line font-medium" id="txtNovedadesVersion">
+          Mejoras y optimizaciones disponibles.
+        </p>
+      </div>
+      <div class="space-y-2 pt-2">
+        <a id="btnDescargarActualizacion" href="#" target="_blank" class="w-full block py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-blue-500/30 active:scale-95 transition">
+          Descargar e Instalar
+        </a>
+        <button id="btnPosponerActualizacion" onclick="cerrarModalActualizacion()" class="w-full py-2.5 text-xs text-slate-400 font-semibold hover:text-slate-600 transition">
+          Recordármelo más tarde
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra Flotante Elevada -->
+  <div class="fixed nav-bar-flotante inset-x-5 z-40 max-w-sm mx-auto">
+    <nav class="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-3xl px-6 py-2.5 shadow-xl shadow-slate-900/10 flex justify-around items-center">
+      <button onclick="cambiarVistaMovil('facturas')" id="btnNavFacturas" class="flex flex-col items-center text-blue-600 transition">
+        <span class="text-xl">📊</span>
+        <span class="text-[10px] font-bold mt-0.5">Facturas</span>
+      </button>
+      
+      <a href="index.html" class="flex flex-col items-center -mt-8 group">
+        <div class="w-14 h-14 rounded-full bg-blue-600 active:bg-blue-700 text-white flex items-center justify-center text-2xl shadow-lg shadow-blue-500/40 border-4 border-slate-100 active:scale-95 transition">
+          📷
+        </div>
+        <span class="text-[10px] font-bold text-slate-700 mt-1">Escanear</span>
+      </a>
+
+      <button onclick="cambiarVistaMovil('catalogo')" id="btnNavCatalogo" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition">
+        <span class="text-xl">📦</span>
+        <span class="text-[10px] font-bold mt-0.5">Catálogo</span>
+      </button>
+    </nav>
+  </div>
+
+  <script>
+    let listadoFacturasGlobal = [];
+    let listadoFacturasFiltradas = [];
+    let listadoCatalogoGlobal = [];
+    let vistaActual = "facturas";
+    let periodoActivo = "todos";
+    let facturaEnEdicionId = null;
+
+    function cambiarVistaMovil(vista) {
+      vistaActual = vista;
+      const secFac = document.getElementById("seccionFacturas");
+      const secCat = document.getElementById("seccionCatalogo");
+      const btnFac = document.getElementById("btnNavFacturas");
+      const btnCat = document.getElementById("btnNavCatalogo");
+
+      if (vista === "catalogo") {
+        secFac.classList.add("hidden");
+        secCat.classList.remove("hidden");
+        btnCat.className = "flex flex-col items-center text-blue-600 transition";
+        btnFac.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition";
+        cargarCatalogoPrecios();
+      } else {
+        secCat.classList.add("hidden");
+        secFac.classList.remove("hidden");
+        btnFac.className = "flex flex-col items-center text-blue-600 transition";
+        btnCat.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition";
+      }
+    }
+
+    function recargarDatosActivos() {
+      if (vistaActual === "catalogo") {
+        cargarCatalogoPrecios();
+      } else {
+        cargarFacturas();
+      }
+    }
+
+    async function comprobarNuevasVersiones() {
+      if (typeof verificarActualizacionDisponible !== "function") return;
+      try {
+        const act = await verificarActualizacionDisponible();
+        if (act) {
+          document.getElementById("txtNumeroVersion").innerText = `Versión ${act.version_nombre}`;
+          document.getElementById("txtNovedadesVersion").innerText = act.novedades || "Nuevas mejoras disponibles.";
+          document.getElementById("btnDescargarActualizacion").href = act.url_apk;
+
+          if (act.es_obligatoria) {
+            document.getElementById("btnPosponerActualizacion").classList.add("hidden");
+          }
+
+          document.getElementById("modalActualizacion").classList.remove("hidden");
+        }
+      } catch (e) {
+        console.warn("Aviso comprobando versión:", e);
+      }
+    }
+
+    function cerrarModalActualizacion() {
+      document.getElementById("modalActualizacion").classList.add("hidden");
+    }
+
+    async function cargarFacturas() {
+      const badge = document.getElementById("badgeEstadoConexion");
+      const errBox = document.getElementById("cajaMensajeError");
+      badge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 shadow-2xs";
+      badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Conectando...';
+      errBox.classList.add("hidden");
+
+      try {
+        // Conteo real por factura mediante subconsulta blindada en Neon
+        const sql = `
+          SELECT 
+            f.id, 
+            COALESCE(f.numero_factura, 'S/N') AS numero_factura, 
+            f.fecha_emision, 
+            COALESCE(f.estado_pago, 'Pendiente') AS estado_pago, 
+            COALESCE(f.total, 0) AS total, 
+            COALESCE(f.url_factura, '') AS url_factura,
+            COALESCE(f.comentario, '') AS comentario, 
+            COALESCE(p.nombre, 'Proveedor Desconocido') AS proveedor,
+            COALESCE((
+              SELECT COUNT(*)::int 
+              FROM detalles_factura df 
+              WHERE df.factura_id = f.id
+            ), 0) AS items_count
+          FROM facturas f
+          LEFT JOIN proveedores p ON p.id = f.proveedor_id
+          ORDER BY f.fecha_emision DESC NULLS LAST, f.id DESC;
+        `;
+        
+        const data = await neonQuery(sql);
+        listadoFacturasGlobal = (data || []).map(normalizarRegistro);
+
+        badge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 shadow-2xs";
+        badge.innerHTML = '● Conectado a Neon';
+
+        aplicarFiltroFechas();
+
+      } catch (err) {
+        console.error("Fallo al cargar facturas:", err);
+        badge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 shadow-2xs";
+        badge.innerHTML = '✕ Error Conexión';
+        errBox.innerHTML = `<strong>Error de acceso a facturas:</strong> ${err.message}`;
+        errBox.classList.remove("hidden");
+      }
+    }
+
+    function normalizarRegistro(row) {
+      if (!row) return {};
+      const claves = Object.keys(row);
+      const getVal = (nombre) => {
+        const encontrada = claves.find(k => k.toLowerCase() === nombre.toLowerCase());
+        return encontrada ? row[encontrada] : null;
+      };
+
+      return {
+        id: parseInt(getVal('id')),
+        proveedor: getVal('proveedor') || 'Proveedor Desconocido',
+        numero_factura: getVal('numero_factura') || getVal('numero') || 'S/N',
+        fecha_emision: getVal('fecha_emision') || getVal('fecha'),
+        estado_pago: getVal('estado_pago') || 'Pendiente',
+        total: parseFloat(getVal('total') || 0),
+        url_factura: getVal('url_factura') || '',
+        comentario: getVal('comentario') || '',
+        items_count: parseInt(getVal('items_count') || 0)
+      };
+    }
+
+    function setPeriodo(tipo) {
+      periodoActivo = tipo;
+      const hoy = new Date();
+      const año = hoy.getFullYear();
+      const mes = hoy.getMonth();
+      const pad = n => String(n).padStart(2, '0');
+
+      const btnMes = document.getElementById("btnPerMes");
+      const btnTri = document.getElementById("btnPerTrimestre");
+      const btnAnio = document.getElementById("btnPerAnio");
+      const btnTod = document.getElementById("btnPerTodos");
+      const lblTxt = document.getElementById("lblRangoActivoTxt");
+
+      [btnMes, btnTri, btnAnio, btnTod].forEach(b => {
+        b.className = "py-2 rounded-xl border border-slate-200 text-slate-600 active:scale-95 transition text-center bg-slate-50";
+      });
+
+      if (tipo === 'mes') {
+        btnMes.className = "py-2 rounded-xl bg-blue-600 text-white font-bold text-center shadow-sm shadow-blue-500/30";
+        document.getElementById("filtroDesde").value = `${año}-${pad(mes + 1)}-01`;
+        document.getElementById("filtroHasta").value = `${año}-${pad(mes + 1)}-${pad(new Date(año, mes + 1, 0).getDate())}`;
+        lblTxt.innerText = "Mes Actual";
+      } else if (tipo === 'trimestre') {
+        btnTri.className = "py-2 rounded-xl bg-blue-600 text-white font-bold text-center shadow-sm shadow-blue-500/30";
+        const d = new Date();
+        d.setMonth(d.getMonth() - 3);
+        document.getElementById("filtroDesde").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        document.getElementById("filtroHasta").value = `${año}-${pad(mes + 1)}-${pad(hoy.getDate())}`;
+        lblTxt.innerText = "Últimos 3 Meses";
+      } else if (tipo === 'anio') {
+        btnAnio.className = "py-2 rounded-xl bg-blue-600 text-white font-bold text-center shadow-sm shadow-blue-500/30";
+        document.getElementById("filtroDesde").value = `${año}-01-01`;
+        document.getElementById("filtroHasta").value = `${año}-12-31`;
+        lblTxt.innerText = `Año ${año}`;
+      } else {
+        btnTod.className = "py-2 rounded-xl bg-blue-600 text-white font-bold text-center shadow-sm shadow-blue-500/30";
+        document.getElementById("filtroDesde").value = "";
+        document.getElementById("filtroHasta").value = "";
+        lblTxt.innerText = "Todo el Historial";
+      }
+
+      aplicarFiltroFechas();
+    }
+
+    function aplicarFiltroFechas() {
+      const desde = document.getElementById("filtroDesde").value;
+      const hasta = document.getElementById("filtroHasta").value;
+
+      listadoFacturasFiltradas = listadoFacturasGlobal.filter(f => {
+        if (!desde && !hasta) return true;
+        if (!f.fecha_emision || f.fecha_emision === 'S/F') return false;
+        const fechaStr = String(f.fecha_emision).slice(0, 10);
+        if (desde && fechaStr < desde) return false;
+        if (hasta && fechaStr > hasta) return false;
+        return true;
+      });
+
+      actualizarMetricasFacturas(listadoFacturasFiltradas);
+      renderizarCardsFacturas(listadoFacturasFiltradas);
+    }
+
+    function actualizarMetricasFacturas(facturas) {
+      let suma = 0;
+      const conteoProv = {};
+
+      facturas.forEach(f => {
+        const tot = f.total || 0;
+        suma += tot;
+        if (f.proveedor && f.proveedor !== 'Proveedor Desconocido') {
+          conteoProv[f.proveedor] = (conteoProv[f.proveedor] || 0) + tot;
+        }
+      });
+
+      document.getElementById("kpiTotalGasto").innerText = `$${suma.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
+      document.getElementById("kpiTotalFacturas").innerText = facturas.length;
+      document.getElementById("contadorFacturasTxt").innerText = `${facturas.length} comprobantes`;
+
+      let topP = "N/A";
+      let maxGasto = -1;
+      for (const p in conteoProv) {
+        if (conteoProv[p] > maxGasto) {
+          maxGasto = conteoProv[p];
+          topP = p;
+        }
+      }
+      document.getElementById("kpiTopProveedor").innerText = topP;
+    }
+
+    async function toggleEstadoPago(facturaId, estadoActual) {
+      const nuevoEstado = estadoActual === "Pagado" ? "Pendiente" : "Pagado";
+      try {
+        await neonQuery("UPDATE facturas SET estado_pago = $1 WHERE id = $2;", [nuevoEstado, facturaId]);
+        const factura = listadoFacturasGlobal.find(f => f.id === facturaId);
+        if (factura) factura.estado_pago = nuevoEstado;
+        renderizarCardsFacturas(listadoFacturasFiltradas);
+      } catch (e) {
+        alert("Error al actualizar pago: " + e.message);
+      }
+    }
+
+    async function abrirModalDetalle(facturaId) {
+      const factura = listadoFacturasGlobal.find(f => f.id === facturaId);
+      if (!factura) return;
+
+      document.getElementById("modalDetalleTitulo").innerText = `Factura #${factura.numero_factura}`;
+      document.getElementById("modalDetalleSubtitulo").innerText = `${factura.proveedor} • ${factura.fecha_emision ? String(factura.fecha_emision).slice(0, 10) : 'S/F'}`;
+      document.getElementById("modalDetalleTotalTxt").innerText = `$${factura.total.toFixed(2)}`;
+
+      const lista = document.getElementById("modalDetalleListaItems");
+      lista.innerHTML = `<div class="text-center p-4 text-xs text-slate-400">Cargando productos...</div>`;
+      document.getElementById("modalDetalleFactura").classList.remove("hidden");
+
+      try {
+        const sql = `
+          SELECT 
+            descripcion, 
+            COALESCE(categoria, 'General') as categoria, 
+            COALESCE(lote, 'N/A') as lote, 
+            cantidad, 
+            precio_unitario,
+            COALESCE(porcentaje_descuento, 0) as porcentaje_descuento,
+            COALESCE(precio_total, cantidad * precio_unitario) as subtotal
+          FROM detalles_factura
+          WHERE factura_id = $1
+          ORDER BY id ASC;
+        `;
+        const items = await neonQuery(sql, [facturaId]);
+        lista.innerHTML = "";
+
+        if (!items || items.length === 0) {
+          lista.innerHTML = `<div class="text-center p-4 text-xs text-slate-400">Sin líneas de productos registradas.</div>`;
+          return;
+        }
+
+        items.forEach(it => {
+          const pu = parseFloat(it.precio_unitario || 0);
+          const sub = parseFloat(it.subtotal || 0);
+          const dcto = parseFloat(it.porcentaje_descuento || 0);
+          lista.innerHTML += `
+            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1">
+              <div class="flex justify-between items-start gap-2">
+                <span class="font-bold text-slate-900 text-xs">${it.descripcion}</span>
+                <span class="font-black text-slate-900 text-xs">$${sub.toFixed(2)}</span>
+              </div>
+              <div class="flex justify-between items-center text-[10px] text-slate-400">
+                <span>Cat: <strong class="text-slate-600">${it.categoria}</strong> ${it.lote && it.lote !== 'N/A' ? '• Lote: ' + it.lote : ''}</span>
+                <span>${it.cantidad} ud(s) x $${pu.toFixed(2)} ${dcto > 0 ? `(-${dcto}%)` : ''}</span>
+              </div>
+            </div>
+          `;
+        });
+      } catch (e) {
+        lista.innerHTML = `<div class="text-rose-600 text-xs p-3">Error al consultar ítems: ${e.message}</div>`;
+      }
+    }
+
+    function cerrarModalDetalle() {
+      document.getElementById("modalDetalleFactura").classList.add("hidden");
+    }
+
+    function abrirModalEditar(facturaId) {
+      const f = listadoFacturasGlobal.find(x => x.id === facturaId);
+      if (!f) return;
+      facturaEnEdicionId = facturaId;
+      document.getElementById("editNumFactura").value = f.numero_factura || "";
+      document.getElementById("editFechaEmision").value = f.fecha_emision ? String(f.fecha_emision).slice(0, 10) : "";
+      document.getElementById("editTotal").value = f.total || 0;
+      document.getElementById("editComentario").value = f.comentario || "";
+      document.getElementById("modalEditarFactura").classList.remove("hidden");
+    }
+
+    function cerrarModalEditar() {
+      document.getElementById("modalEditarFactura").classList.add("hidden");
+      facturaEnEdicionId = null;
+    }
+
+    async function guardarEdicionFactura() {
+      if (!facturaEnEdicionId) return;
+      const num = document.getElementById("editNumFactura").value.trim();
+      const fecha = document.getElementById("editFechaEmision").value || null;
+      const tot = parseFloat(document.getElementById("editTotal").value) || 0;
+      const com = document.getElementById("editComentario").value.trim() || null;
+
+      try {
+        await neonQuery(`
+          UPDATE facturas 
+          SET numero_factura = $1, fecha_emision = $2, total = $3, comentario = $4 
+          WHERE id = $5;
+        `, [num, fecha, tot, com, facturaEnEdicionId]);
+
+        cerrarModalEditar();
+        await cargarFacturas();
+        alert("¡Factura actualizada con éxito en Neon!");
+      } catch (e) {
+        alert("Error al actualizar: " + e.message);
+      }
+    }
+
+    async function eliminarFactura(facturaId) {
+      const f = listadoFacturasGlobal.find(x => x.id === facturaId);
+      const prov = f ? f.proveedor : '';
+      if (!confirm(`¿Eliminar la factura #${f ? f.numero_factura : facturaId} de ${prov}?\nEsta acción es permanente.`)) {
+        return;
+      }
+
+      try {
+        await neonQuery(`DELETE FROM detalles_factura WHERE factura_id = $1;`, [facturaId]);
+        await neonQuery(`DELETE FROM facturas WHERE id = $1;`, [facturaId]);
+
+        listadoFacturasGlobal = listadoFacturasGlobal.filter(x => x.id !== facturaId);
+        aplicarFiltroFechas();
+        alert("Factura eliminada.");
+      } catch (e) {
+        alert("Error al eliminar: " + e.message);
+      }
+    }
+
+    function renderizarCardsFacturas(facturas) {
+      const contenedor = document.getElementById("contenedorFacturasCards");
+      contenedor.innerHTML = "";
+
+      if (facturas.length === 0) {
+        contenedor.innerHTML = `
+          <div class="bg-white p-8 rounded-3xl border border-slate-200/80 text-center">
+            <span class="text-3xl block mb-2">📄</span>
+            <p class="text-xs font-bold text-slate-700">Sin facturas en este criterio</p>
+          </div>
+        `;
+        return;
+      }
+
+      facturas.forEach(f => {
+        const esPagado = f.estado_pago === "Pagado";
+        const fechaTxt = f.fecha_emision ? String(f.fecha_emision).slice(0, 10) : "S/F";
+        const urls = f.url_factura ? f.url_factura.split(',').map(u => u.trim()).filter(Boolean) : [];
+
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3 transition";
+        card.innerHTML = `
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm line-clamp-1 leading-tight">${f.proveedor}</h3>
+              <p class="text-[11px] text-slate-400 font-mono mt-1">Fac: #${f.numero_factura} • ${fechaTxt}</p>
+            </div>
+            
+            <button onclick="toggleEstadoPago(${f.id}, '${f.estado_pago}')" 
+                    class="px-3 py-1 rounded-full text-[10px] font-bold active:scale-95 transition cursor-pointer ${esPagado ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}">
+              ${esPagado ? '✓ Pagado' : '⏳ Pendiente'}
+            </button>
+          </div>
+
+          <div class="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
+            <button onclick="abrirModalDetalle(${f.id})" class="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
+              🔍 ${f.items_count} producto(s)
+            </button>
+            <span class="text-lg font-black text-slate-900 tracking-tight">$${f.total.toFixed(2)}</span>
+          </div>
+
+          <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+            <div class="flex gap-1.5 overflow-x-auto">
+              ${urls.length > 0 ? urls.map((u, i) => `
+                <a href="${u}" target="_blank" class="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200">
+                  📄 H${i + 1}
+                </a>
+              `).join('') : '<span class="text-[10px] text-slate-400">Sin foto</span>'}
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <button onclick="abrirModalEditar(${f.id})" class="p-2 bg-amber-50 active:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold border border-amber-200">
+                ✏️
+              </button>
+              <button onclick="eliminarFactura(${f.id})" class="p-2 bg-rose-50 active:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200">
+                🗑
+              </button>
+            </div>
+          </div>
+        `;
+        contenedor.appendChild(card);
+      });
+    }
+
+    async function cargarCatalogoPrecios() {
+      const contenedor = document.getElementById("contenedorCatalogoCards");
+      contenedor.innerHTML = `
+        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 animate-pulse text-center text-xs text-slate-400">
+          Cargando catálogo maestro desde Neon...
+        </div>
+      `;
+
+      try {
+        const sql = `
+          SELECT 
+            d.descripcion AS producto,
+            COALESCE(d.categoria, 'General') AS categoria,
+            COUNT(d.id)::int AS total_compras,
+            COALESCE(SUM(d.cantidad), COUNT(d.id))::numeric AS unidades_totales,
+            MIN(d.precio_unitario) AS precio_min,
+            MAX(d.precio_unitario) AS precio_max,
+            ROUND(AVG(d.precio_unitario)::numeric, 2) AS precio_promedio,
+            (
+              SELECT p2.nombre 
+              FROM detalles_factura d2 
+              JOIN facturas f2 ON f2.id = d2.factura_id 
+              JOIN proveedores p2 ON p2.id = f2.proveedor_id 
+              WHERE d2.descripcion = d.descripcion 
+              ORDER BY d2.precio_unitario ASC LIMIT 1
+            ) AS mejor_proveedor,
+            json_agg(
+              json_build_object(
+                'fecha', COALESCE(f.fecha_emision::text, 'S/F'),
+                'proveedor', p.nombre,
+                'factura', f.numero_factura,
+                'precio', d.precio_unitario,
+                'cantidad', d.cantidad,
+                'descuento', COALESCE(d.porcentaje_descuento, 0)
+              ) ORDER BY f.fecha_emision DESC NULLS LAST
+            ) AS historial
+          FROM detalles_factura d
+          JOIN facturas f ON f.id = d.factura_id
+          JOIN proveedores p ON p.id = f.proveedor_id
+          WHERE d.categoria IS NULL OR d.categoria != 'Gasto Operativo'
+          GROUP BY d.descripcion, d.categoria
+          ORDER BY d.descripcion ASC;
+        `;
+
+        const data = await neonQuery(sql);
+        listadoCatalogoGlobal = data || [];
+        document.getElementById("badgeTotalItemsCatalogo").innerText = `${listadoCatalogoGlobal.length} productos`;
+
+        renderizarCardsCatalogo(listadoCatalogoGlobal);
+
+      } catch (err) {
+        console.error("Error al cargar catálogo:", err);
+        contenedor.innerHTML = `
+          <div class="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-xs text-rose-700">
+            Error al consultar productos: ${err.message}
+          </div>
+        `;
+      }
+    }
+
+    function renderizarCardsCatalogo(productos) {
+      const contenedor = document.getElementById("contenedorCatalogoCards");
+      contenedor.innerHTML = "";
+
+      if (productos.length === 0) {
+        contenedor.innerHTML = `
+          <div class="bg-white p-8 rounded-3xl border border-slate-200/80 text-center">
+            <span class="text-3xl block mb-2">📦</span>
+            <p class="text-xs font-bold text-slate-700">No hay productos que coincidan</p>
+          </div>
+        `;
+        return;
+      }
+
+      productos.forEach((p, idx) => {
+        const precioMin = parseFloat(p.precio_min || 0);
+        const precioMax = parseFloat(p.precio_max || 0);
+        const precioProm = parseFloat(p.precio_promedio || 0);
+        const historial = Array.isArray(p.historial) ? p.historial : [];
+
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3";
+        card.innerHTML = `
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm leading-tight">${p.producto}</h3>
+              <div class="flex items-center gap-2 mt-1">
+                <span class="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold">
+                  ${p.categoria || 'General'}
+                </span>
+                <span class="text-[10px] text-slate-400 font-medium">
+                  ${p.total_compras} compras (${p.unidades_totales} uds)
+                </span>
+              </div>
+            </div>
+            <button onclick="toggleHistorialCat(${idx})" class="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 text-xs font-bold border border-slate-200 flex items-center justify-center">
+              ▼
+            </button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 text-center pt-1">
+            <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-2.5">
+              <span class="text-[9px] uppercase tracking-wider font-bold text-emerald-700 block">Mínimo</span>
+              <span class="text-sm font-black text-emerald-800">$${precioMin.toFixed(2)}</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5">
+              <span class="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Promedio</span>
+              <span class="text-sm font-black text-blue-700">$${precioProm.toFixed(2)}</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5">
+              <span class="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Máximo</span>
+              <span class="text-sm font-black text-slate-800">$${precioMax.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-xs bg-slate-50 rounded-2xl px-3.5 py-2.5 border border-slate-100">
+            <span class="text-slate-400 font-medium">Mejor precio en:</span>
+            <span class="font-bold text-emerald-700 truncate max-w-[160px]">${p.mejor_proveedor || 'N/A'}</span>
+          </div>
+
+          <div id="historial-cat-${idx}" class="hidden border-t border-slate-100 pt-2 space-y-2">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Historial de facturas:</span>
+            <div class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+              ${historial.map(h => `
+                <div class="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl">
+                  <div>
+                    <span class="font-bold text-slate-800 block">${h.proveedor}</span>
+                    <span class="text-[10px] text-slate-400">${h.fecha} • #${h.factura}</span>                   </div>                   <div class="text-right">                     <span class="font-black text-slate-900">$${parseFloat(h.precio).toFixed(2)}</span>
+                    <span class="text-[10px] text-slate-400 block">${h.cantidad} ud(s)${h.descuento > 0 ? `(-${h.descuento}%)` : ''}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        contenedor.appendChild(card);
+      });
+    }
+
+    function toggleHistorialCat(idx) {
+      const el = document.getElementById(`historial-cat-${idx}`);
+      if (el) el.classList.toggle("hidden");
+    }
+
+    function filtrarCatalogo() {
+      const q = document.getElementById("filtroCatalogoInput").value.toLowerCase().trim();
+      const cat = document.getElementById("filtroCategoriaSelect").value;
+
+      const filtrados = listadoCatalogoGlobal.filter(p => {
+        const coincideNombre = !q || p.producto.toLowerCase().includes(q) || (p.mejor_proveedor && p.mejor_proveedor.toLowerCase().includes(q));
+        const coincideCat = (cat === "todas") || (p.categoria === cat);
+        return coincideNombre && coincideCat;
+      });
+
+      renderizarCardsCatalogo(filtrados);
+    }
+
+    document.getElementById("filtroCatalogoInput").addEventListener("input", filtrarCatalogo);
+    document.getElementById("filtroCategoriaSelect").addEventListener("change", filtrarCatalogo);
+
+    document.getElementById("filtroFacturasInput").addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        renderizarCardsFacturas(listadoFacturasFiltradas);
+        return;
+      }
+      const filtradas = listadoFacturasFiltradas.filter(f => 
+        (f.proveedor && f.proveedor.toLowerCase().includes(q)) ||
+        (f.numero_factura && f.numero_factura.toLowerCase().includes(q))
+      );
+      renderizarCardsFacturas(filtradas);
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      if (localStorage.getItem('vista_mobadent') === 'catalogo') {
+        localStorage.removeItem('vista_mobadent');
+        cambiarVistaMovil('catalogo');
+      } else {
+        cargarFacturas();
+      }
+      setTimeout(comprobarNuevasVersiones, 1200);
+    });
+  </script>
+</body>
+</html>

@@ -1,30 +1,60 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import date, datetime
+
+# --- Esquemas usados por Gemini (ai_extractor.py) ---
 
 class ItemFacturaAI(BaseModel):
-    sku: Optional[str] = Field(None, description="Código principal o auxiliar del ítem dental")
-    descripcion: str = Field(..., description="Descripción detallada del producto dental o servicio")
-    lote: Optional[str] = Field(None, description="Número de lote si aparece en la factura")
-    cantidad: float = Field(..., description="Cantidad facturada")
-    precio_unitario: float = Field(..., description="Precio unitario de lista antes de descuento")
-    porcentaje_descuento: float = Field(0.0, description="Porcentaje de descuento aplicado a la línea (ej. 15.0 o 20.0)")
-    descuento_valor: float = Field(0.0, description="Monto en valor monetario del descuento de la línea")
-    subtotal: float = Field(..., description="Subtotal neto de la línea después de descuentos")
+    descripcion: str = Field(default="", description="Descripción del producto o servicio")
+    cantidad: float = Field(default=1.0, description="Cantidad adquirida")
+    precio_unitario: float = Field(default=0.0, description="Precio unitario")
+    precio_total: float = Field(default=0.0, description="Precio total del ítem")
+    categoria: Optional[str] = Field(default="General", description="Categoría estimada del insumo")
 
 class FacturaExtraccionAI(BaseModel):
-    proveedor_nombre: str = Field(..., description="Razón social del proveedor (ej. DISTRIDENTAL S.A.)")
-    proveedor_id_fiscal: Optional[str] = Field(None, description="RUC, CIF o NIT del emisor")
-    numero_factura: str = Field(..., description="Número completo de factura (ej. 001-011-000005833)")
-    numero_autorizacion: Optional[str] = Field(None, description="Número de autorización del SRI o entidad tributaria")
-    fecha_emision: Optional[str] = Field(None, description="Fecha de emisión en formato YYYY-MM-DD")
+    proveedor_nombre: str = Field(default="Consumidor Final", description="Razón social o nombre del emisor")
+    proveedor_id_fiscal: str = Field(default="9999999999999", description="RUC o identificación tributaria del emisor")
+    numero_factura: str = Field(default="", description="Número de comprobante secuencial")
+    fecha_emision: Optional[str] = Field(default=None, description="Fecha de emisión en formato YYYY-MM-DD")
+    numero_autorizacion: Optional[str] = Field(default=None, description="Clave de acceso o autorización")
     
-    # Desglose impositivo y de descuentos
-    base_iva_0: float = Field(0.0, description="Base imponible con tarifa 0% de IVA")
-    base_iva_grabada: float = Field(0.0, description="Base imponible con tarifa de IVA (12%, 15%, etc.)")
-    porcentaje_iva: float = Field(15.0, description="Porcentaje de IVA aplicado (ej. 15.0 o 12.0)")
-    descuento_total: float = Field(0.0, description="Suma total de descuentos de la factura")
-    subtotal: float = Field(0.0, description="Subtotal general antes de impuestos")
-    impuestos: float = Field(0.0, description="Valor monetario del IVA liquidado")
-    total: float = Field(..., description="Importe total neto a pagar")
+    base_iva_0: float = Field(default=0.0, description="Subtotal tarifa 0%")
+    base_iva_grabada: float = Field(default=0.0, description="Subtotal tarifa gravada con IVA")
+    subtotal: float = Field(default=0.0, description="Subtotal general sin impuestos")
+    impuestos: float = Field(default=0.0, description="Monto total del IVA u otros impuestos")
+    total: float = Field(default=0.0, description="Importe total a pagar")
     
-    items: List[ItemFacturaAI] = Field(default_factory=list, description="Desglose de productos o insumos")
+    items: List[ItemFacturaAI] = Field(default_factory=list, description="Lista de productos desglosados")
+
+
+# --- Esquemas de lectura y payload ---
+
+class DetalleFacturaOut(BaseModel):
+    id: int
+    descripcion: str
+    categoria: Optional[str] = "General"
+    cantidad: float
+    precio_unitario: float
+    precio_total: float
+
+    class Config:
+        from_attributes = True
+
+class FacturaOut(BaseModel):
+    id: int
+    proveedor_nombre: str
+    proveedor_ruc: str
+    numero_factura: str
+    fecha_emision: Optional[date] = None
+    subtotal: float
+    iva: float
+    total: float
+    estado_pago: Optional[str] = "Pendiente"
+    metodo_pago: Optional[str] = None
+    fecha_pago: Optional[date] = None
+    url_factura: Optional[str] = None
+    url_comprobante_pago: Optional[str] = None
+    items: List[DetalleFacturaOut] = []
+
+    class Config:
+        from_attributes = True

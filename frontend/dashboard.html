@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mobadent - BI & Control de Compras</title>
-<!-- Ícono para la barra de tareas y ventana superior -->
   <link rel="icon" type="image/x-icon" href="/frontend/app.ico">
   <link rel="shortcut icon" href="/frontend/app.ico">
   <script src="https://cdn.tailwindcss.com"></script>
@@ -17,13 +16,10 @@
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b pb-4">
       <div>
         <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700">Mobadent Dashboard</h1>
-        <p class="text-xs md:text-sm text-slate-500">Gestión de costos, cotabilidad y auditoría de compras</p>
+        <p class="text-xs md:text-sm text-slate-500">Gestión de costos, contabilidad y auditoría de compras</p>
       </div>
-      <div class="flex flex-wrap gap-2">
-        <button onclick="abrirModalHistoricoAlertas()" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-3.5 rounded-lg text-xs shadow transition cursor-pointer flex items-center gap-1.5">
-          📋 Historial Alertas
-        </button>
-        <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow transition">
+      <div>
+        <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow transition flex items-center gap-1.5">
           + Registrar Factura
         </a>
       </div>
@@ -35,13 +31,49 @@
         📊 Panel Estratégico & Facturas
       </button>
       <button id="tabBtnCatalogo" onclick="cambiarPestana('catalogo')" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-2">
-        📦 Catálogo Maestro de Productos (<span id="badgeTotalProductos">0</span>)
+        📦 Catálogo & Categorías (<span id="badgeTotalProductos">0</span>)
       </button>
     </div>
 
     <!-- VISTA 1: DASHBOARD ESTRATÉGICO & FACTURAS -->
     <div id="vistaDashboard">
       
+      <!-- SELECTOR DINÁMICO DE PERÍODO TEMPORAL Y RANGO PERSONALIZADO -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-xs mb-6">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold text-slate-600 uppercase">📅 Período:</span>
+          <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs font-semibold">
+            <button onclick="setPeriodo('mes')" id="btnPerMes" class="px-3 py-1 rounded-md transition cursor-pointer">
+              Este Mes
+            </button>
+            <button onclick="setPeriodo('trimestre')" id="btnPerTrimestre" class="px-3 py-1 rounded-md transition cursor-pointer">
+              Últimos 3 Meses
+            </button>
+            <button onclick="setPeriodo('anio')" id="btnPerAnio" class="px-3 py-1 rounded-md transition cursor-pointer">
+              Este Año
+            </button>
+            <button onclick="setPeriodo('todos')" id="btnPerTodos" class="px-3 py-1 rounded-md transition cursor-pointer">
+              Histórico Completo
+            </button>
+            <button onclick="toggleRangoPersonalizado()" id="btnPerCustom" class="px-3 py-1 rounded-md transition cursor-pointer">
+              ⚙️ Personalizado
+            </button>
+          </div>
+        </div>
+
+        <div id="cajaRangoCustom" class="hidden flex items-center gap-2 text-xs">
+          <span class="text-slate-400">Desde:</span>
+          <input type="date" id="customDesde" class="border rounded px-2 py-1 bg-slate-50 text-slate-700">
+          <span class="text-slate-400">Hasta:</span>
+          <input type="date" id="customHasta" class="border rounded px-2 py-1 bg-slate-50 text-slate-700">
+          <button onclick="aplicarRangoCustom()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded font-semibold cursor-pointer">
+            Aplicar
+          </button>
+        </div>
+
+        <span id="badgeRangoFechasActivo" class="text-xs text-slate-400 font-medium"></span>
+      </div>
+
       <!-- BUSCADOR REACTIVO EN TIEMPO REAL -->
       <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -49,7 +81,7 @@
             <h2 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
               🔍 Búsqueda y Comparativa de Insumos en Vivo
             </h2>
-            <p class="text-xs text-slate-400">Escribe el nombre de cualquier producto para ver su auditoría de precios al instante</p>
+            <p class="text-xs text-slate-400">Escribe el nombre de cualquier producto para ver su historial de precios al instante</p>
           </div>
           <div class="relative w-full sm:w-80">
             <input type="text" id="inputBuscarProd" placeholder="Escribe para buscar (ej: Resina, Guantes, Conos)..." 
@@ -64,25 +96,14 @@
         </div>
       </div>
 
-      <!-- Panel de Variación de Costos Recientes -->
-      <div id="alertaPreciosContenedor" class="hidden mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-sm">
-        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-2">
-          <span class="text-amber-700 font-bold text-sm">⚠️ Auditoría de Variación de Precios Recientes</span>
-          <button onclick="abrirModalHistoricoAlertas()" class="text-xs text-amber-800 hover:text-amber-950 font-semibold underline cursor-pointer text-left sm:text-right">
-            Ver todas o restaurar descartadas →
-          </button>
-        </div>
-        <div id="listaAlertas" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs"></div>
-      </div>
-
       <!-- KPIs Clave -->
       <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Gasto Total Acumulado</span>
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider" id="lblKpiGasto">Gasto del Período</span>
           <div id="kpiTotalGasto" class="text-2xl font-bold text-slate-900 mt-1">$0.00</div>
         </div>
         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Facturas Totales</span>
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Facturas Registradas</span>
           <div id="kpiTotalFacturas" class="text-2xl font-bold text-blue-600 mt-1">0</div>
         </div>
         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -129,7 +150,7 @@
           <div class="flex justify-between items-center mb-2">
             <div>
               <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Desembolso de Caja</h2>
-              <p class="text-[11px] text-slate-400">Mensual (IVA incluido)</p>
+              <p class="text-[11px] text-slate-400">Últimos 12 meses (IVA incluido)</p>
             </div>
             <span id="promedioDesembolsoBadge" class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
               Promedio: $0.00
@@ -141,7 +162,7 @@
         </div>
       </div>
 
-      <!-- Historial de Facturas con Filtro y Estado de Pago -->
+      <!-- Historial de Facturas -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
         <div class="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-3">
           <h2 class="text-base font-bold text-slate-800">Historial de Facturas y Tesorería</h2>
@@ -174,9 +195,9 @@
             <thead>
               <tr class="border-b text-slate-500 text-xs uppercase bg-slate-50">
                 <th class="p-3">ID</th>
-                <th class="p-3">Proveedor & Nota</th>
+                <th class="p-3">Proveedor & Auditoría</th>
                 <th class="p-3">N° Factura</th>
-                <th class="p-3">Fecha</th>
+                <th class="p-3">Fecha Emisión</th>
                 <th class="p-3 text-center">Estado de Pago</th>
                 <th class="p-3 text-center">Ítems</th>
                 <th class="p-3 text-right">Total</th>
@@ -202,25 +223,67 @@
 
     </div>
 
-    <!-- VISTA 2: CATÁLOGO MAESTRO DE PRODUCTOS -->
+    <!-- VISTA 2: CATÁLOGO MAESTRO & ANÁLISIS DE CATEGORÍAS -->
     <div id="vistaCatalogo" class="hidden">
+      
+      <!-- SECCIÓN BI: DISTRIBUCIÓN POR CATEGORÍAS -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div>
+            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Distribución de Gasto</h2>
+            <p class="text-xs text-slate-400">Proporción por categoría en el período activo</p>
+          </div>
+          <div class="relative h-48 w-full mt-2 flex items-center justify-center">
+            <canvas id="chartCategoriasDoughnut"></canvas>
+          </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+          <div class="flex justify-between items-center mb-3">
+            <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Desglose por Categoría</h2>
+            <span class="text-xs text-slate-400">Inversión y Volumen</span>
+          </div>
+          <div class="overflow-y-auto max-h-52">
+            <table class="w-full text-left text-xs" id="tableResumenCategorias">
+              <thead class="bg-slate-50 border-b text-slate-600">
+                <tr>
+                  <th class="p-2">Categoría Profesional</th>
+                  <th class="p-2 text-center">Unidades</th>
+                  <th class="p-2 text-right">Monto Total</th>
+                  <th class="p-2 text-right">% Gasto</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLA PRINCIPAL DEL CATÁLOGO -->
       <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
         
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 pb-4 border-b border-slate-100">
           <div>
             <h2 class="text-base font-bold text-slate-800">Catálogo General de Insumos</h2>
-            <p class="text-xs text-slate-400">Listado íntegro con precios de referencia y variación cronológica</p>
+            <p class="text-xs text-slate-400">Edición interactiva de categoría y unificación de duplicados</p>
           </div>
 
           <div class="flex flex-wrap items-center gap-2 w-full md:w-auto text-xs">
-            <input type="text" id="filtroTextoCatalogo" placeholder="Filtrar catálogo..." 
+            <input type="text" id="filtroTextoCatalogo" placeholder="Buscar insumo o proveedor..." 
                    class="border border-slate-300 rounded-lg px-3 py-2 text-xs w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500">
             
-            <select id="filtroEstadoCatalogo" class="border border-slate-300 rounded-lg px-2.5 py-2 text-xs bg-slate-50 text-slate-700">
-              <option value="todos">Todos los productos</option>
-              <option value="subidas">🔴 Subidas de Precio (+Caro)</option>
-              <option value="ahorros">🟢 Ahorros / Rebajas (-Barato)</option>
-              <option value="estables">✓ Precios Estables</option>
+            <select id="filtroCategoriaCatalogo" class="border border-slate-300 rounded-lg px-2.5 py-2 text-xs bg-slate-50 text-slate-700">
+              <option value="todas">Todas las categorías</option>
+              <option value="General">General</option>
+              <option value="Restauración & Estética">Restauración & Estética</option>
+              <option value="Endodoncia">Endodoncia</option>
+              <option value="Ortodoncia">Ortodoncia</option>
+              <option value="Periodoncia & Profilaxis">Periodoncia & Profilaxis</option>
+              <option value="Impresión & Modelos">Impresión & Modelos</option>
+              <option value="Prótesis & Laboratorio">Prótesis & Laboratorio</option>
+              <option value="Instrumental & Fresas">Instrumental & Fresas</option>
+              <option value="Bioseguridad & Esterilización">Bioseguridad & Esterilización</option>
+              <option value="Equipos & Repuestos">Equipos & Repuestos</option>
             </select>
           </div>
         </div>
@@ -230,13 +293,13 @@
             <thead class="bg-slate-50 border-b text-slate-600 font-semibold uppercase">
               <tr>
                 <th class="p-3">Producto / Presentación</th>
+                <th class="p-3">Categoría Asignada</th>
                 <th class="p-3 text-center">Compras</th>
                 <th class="p-3 text-center">Uds</th>
                 <th class="p-3 text-right">Último</th>
                 <th class="p-3 text-right">Mínimo</th>
                 <th class="p-3 text-right">Máximo</th>
                 <th class="p-3 text-right">Promedio</th>
-                <th class="p-3 text-center">Estado / Variación</th>
                 <th class="p-3 text-center">Acción</th>
               </tr>
             </thead>
@@ -247,6 +310,9 @@
     </div>
 
   </div>
+
+  <!-- INPUT OCULTO PARA ADJUNTAR FOTO/PDF A FACTURA (SOPORTA MULTI-SELECCIÓN) -->
+  <input type="file" id="inputAdjuntarFacturaOculto" accept="image/*,application/pdf" multiple class="hidden">
 
   <!-- MODAL DE DETALLE -->
   <div id="modalDetalle" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center p-4 z-50">
@@ -264,6 +330,7 @@
           <thead class="bg-slate-50 border-b">
             <tr>
               <th class="p-2.5">Descripción del Insumo</th>
+              <th class="p-2.5">Categoría</th>
               <th class="p-2.5 text-center">Cant.</th>
               <th class="p-2.5 text-right">Precio Unit.</th>
               <th class="p-2.5 text-center">% Dcto</th>
@@ -287,7 +354,7 @@
       <div class="flex justify-between items-center border-b pb-3 mb-4">
         <div>
           <h3 class="text-lg font-bold text-slate-800">Editar Factura</h3>
-          <p class="text-xs text-slate-500">Corrige números o importes leídos por la IA</p>
+          <p class="text-xs text-slate-500">Corrige números o importes de la compra</p>
         </div>
         <button onclick="cerrarModalEditar()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold p-1 leading-none cursor-pointer">&times;</button>
       </div>
@@ -315,6 +382,7 @@
           <thead class="bg-slate-50 border-b">
             <tr>
               <th class="p-2">Descripción</th>
+              <th class="p-2 w-48">Categoría</th>
               <th class="p-2 w-20 text-center">Cant.</th>
               <th class="p-2 w-24 text-right">Precio Unit.</th>
               <th class="p-2 w-16 text-center">% Dcto</th>
@@ -336,64 +404,37 @@
     </div>
   </div>
 
-  <!-- MODAL HISTÓRICO DE ALERTAS -->
-  <div id="modalHistoricoAlertas" class="hidden fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full p-6 max-h-[90vh] flex flex-col">
-      <div class="flex justify-between items-center border-b pb-3 mb-4">
-        <div>
-          <h3 class="text-lg font-bold text-slate-800">Repositorio Histórico de Alertas de Precios</h3>
-          <p class="text-xs text-slate-500">Registro auditable de todas las variaciones detectadas en tus compras</p>
-        </div>
-        <button onclick="cerrarModalHistoricoAlertas()" class="text-slate-400 hover:text-slate-700 text-2xl font-bold p-1 leading-none cursor-pointer">&times;</button>
-      </div>
-
-      <div class="flex justify-between items-center mb-3 text-xs">
-        <span class="text-slate-500" id="contadorAlertasModal">Cargando alertas...</span>
-        <button onclick="restaurarTodasLasAlertas()" class="text-blue-600 hover:text-blue-800 font-semibold underline cursor-pointer">
-          Restaurar todas al panel principal
-        </button>
-      </div>
-
-      <div class="overflow-y-auto flex-1 border rounded-lg">
-        <table class="w-full text-left text-xs" id="tableModalAlertas">
-          <thead class="bg-slate-50 border-b text-slate-600">
-            <tr>
-              <th class="p-2.5">Fecha</th>
-              <th class="p-2.5">Producto</th>
-              <th class="p-2.5">Proveedor</th>
-              <th class="p-2.5 text-right">P. Anterior</th>
-              <th class="p-2.5 text-right">P. Nuevo</th>
-              <th class="p-2.5 text-center">Variación</th>
-              <th class="p-2.5 text-center">Estado</th>
-              <th class="p-2.5 text-center">Acción</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100"></tbody>
-        </table>
-      </div>
-
-      <div class="mt-4 flex justify-end border-t pt-3">
-        <button onclick="cerrarModalHistoricoAlertas()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold">
-          Cerrar
-        </button>
-      </div>
-    </div>
-  </div>
-
   <script>
-    // Conexión robusta: detecta automáticamente si se abre como archivo local (file://) o vía web
     const hostActual = window.location.hostname && window.location.hostname !== "" ? window.location.hostname : "localhost";
     const API_URL = `http://${hostActual}:8000/api`;
 
+    const CATEGORIAS_SISTEMA = [
+      "General",
+      "Restauración & Estética",
+      "Endodoncia",
+      "Ortodoncia",
+      "Periodoncia & Profilaxis",
+      "Impresión & Modelos",
+      "Prótesis & Laboratorio",
+      "Instrumental & Fresas",
+      "Bioseguridad & Esterilización",
+      "Equipos & Repuestos",
+      "Gasto Operativo"
+    ];
+
     let listaFacturas = [];
     let facturasFiltradas = [];
-    let todasLasAlertasCargadas = [];
     let catalogoCompleto = [];
     let currentPage = 1;
     let pageSize = 10;
-    let gastoTotalGlobal = 0;
     let facturaEnEdicionId = null;
+    let facturaParaSubirArchivoId = null;
     let miGraficoFlujo = null;
+    let miGraficoCategorias = null;
+
+    let periodoSeleccionado = "todos";
+    let fechaDesdePeriodo = null;
+    let fechaHastaPeriodo = null;
 
     function cambiarPestana(pestana) {
       const vDash = document.getElementById("vistaDashboard");
@@ -407,6 +448,7 @@
         tCat.className = "pb-3 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-2";
         tDash.className = "pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-2";
         cargarCatalogoMaestro();
+        cargarAnaliticaCategorias();
       } else {
         vCat.classList.add("hidden");
         vDash.classList.remove("hidden");
@@ -415,34 +457,133 @@
       }
     }
 
-    async function cargarTodo() {
+    function toggleRangoPersonalizado() {
+      const caja = document.getElementById("cajaRangoCustom");
+      caja.classList.toggle("hidden");
+    }
+
+    function aplicarRangoCustom() {
+      const d = document.getElementById("customDesde").value;
+      const h = document.getElementById("customHasta").value;
+
+      if (!d || !h) {
+        alert("Por favor selecciona ambas fechas (Desde y Hasta).");
+        return;
+      }
+      if (d > h) {
+        alert("La fecha 'Desde' no puede ser posterior a 'Hasta'.");
+        return;
+      }
+
+      fechaDesdePeriodo = d;
+      fechaHastaPeriodo = h;
+      periodoSeleccionado = "custom";
+
+      resaltarBotonPeriodo("btnPerCustom");
+      document.getElementById("lblKpiGasto").innerText = "Gasto del Rango";
+      document.getElementById("badgeRangoFechasActivo").innerText = `Personalizado: ${d} al ${h}`;
+
+      cargarTodo();
+      cargarAnaliticaCategorias();
+    }
+
+    function resaltarBotonPeriodo(btnIdActivo) {
+      const botones = ["btnPerMes", "btnPerTrimestre", "btnPerAnio", "btnPerTodos", "btnPerCustom"];
+      botones.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.className = (id === btnIdActivo)
+            ? "px-3 py-1 rounded-md transition cursor-pointer bg-white text-blue-700 shadow-xs font-bold"
+            : "px-3 py-1 rounded-md transition cursor-pointer text-slate-600 hover:text-slate-900";
+        }
+      });
+    }
+
+    function setPeriodo(tipo) {
+      periodoSeleccionado = tipo;
+      document.getElementById("cajaRangoCustom").classList.add("hidden");
+
+      const hoy = new Date();
+      const año = hoy.getFullYear();
+      const mes = hoy.getMonth();
+
+      const formatFecha = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      if (tipo === "mes") {
+        resaltarBotonPeriodo("btnPerMes");
+        const primerDia = new Date(año, mes, 1);
+        const ultimoDia = new Date(año, mes + 1, 0);
+        fechaDesdePeriodo = formatFecha(primerDia);
+        fechaHastaPeriodo = formatFecha(ultimoDia);
+        document.getElementById("lblKpiGasto").innerText = "Gasto de Este Mes";
+        document.getElementById("badgeRangoFechasActivo").innerText = `Mes actual (${fechaDesdePeriodo} al ${fechaHastaPeriodo})`;
+      } else if (tipo === "trimestre") {
+        resaltarBotonPeriodo("btnPerTrimestre");
+        const hace3Meses = new Date();
+        hace3Meses.setMonth(hace3Meses.getMonth() - 3);
+        fechaDesdePeriodo = formatFecha(hace3Meses);
+        fechaHastaPeriodo = formatFecha(hoy);
+        document.getElementById("lblKpiGasto").innerText = "Gasto Últimos 3 Meses";
+        document.getElementById("badgeRangoFechasActivo").innerText = `Últimos 90 días (${fechaDesdePeriodo} al ${fechaHastaPeriodo})`;
+      } else if (tipo === "anio") {
+        resaltarBotonPeriodo("btnPerAnio");
+        fechaDesdePeriodo = `${año}-01-01`;
+        fechaHastaPeriodo = `${año}-12-31`;
+        document.getElementById("lblKpiGasto").innerText = `Gasto Total ${año}`;
+        document.getElementById("badgeRangoFechasActivo").innerText = `Año ${año}`;
+      } else {
+        resaltarBotonPeriodo("btnPerTodos");
+        fechaDesdePeriodo = null;
+        fechaHastaPeriodo = null;
+        document.getElementById("lblKpiGasto").innerText = "Gasto Total Acumulado";
+        document.getElementById("badgeRangoFechasActivo").innerText = "Todo el historial registrado";
+      }
+
+      cargarTodo();
+      cargarAnaliticaCategorias();
+    }
+
+    async function cargarTodo(esReintento = false) {
       try {
-        const [resStats, resInsumos, resAlertas, resFlujo, resList] = await Promise.all([
-          fetch(`${API_URL}/estadisticas`),
-          fetch(`${API_URL}/analitica/productos`),
-          fetch(`${API_URL}/analitica/alertas-precios`),
-          fetch(`${API_URL}/analitica/flujo-caja`),
-          fetch(`${API_URL}/facturas/listado`)
+        let qParams = "";
+        if (fechaDesdePeriodo && fechaHastaPeriodo) {
+          qParams = `?desde=${fechaDesdePeriodo}&hasta=${fechaHastaPeriodo}`;
+        }
+
+        const [resStats, resInsumos, resFlujo, resList] = await Promise.all([
+          fetch(`${API_URL}/estadisticas${qParams}`).then(r => r.ok ? r.json() : {}),
+          fetch(`${API_URL}/analitica/productos${qParams}`).then(r => r.ok ? r.json() : []),
+          fetch(`${API_URL}/analitica/flujo-caja`).then(r => r.ok ? r.json() : { historico: [], promedio_mensual: 0 }),
+          fetch(`${API_URL}/facturas/listado`).then(r => r.ok ? r.json() : [])
         ]);
 
-        const [stats, insumos, alertas, dataFlujo, facturas] = await Promise.all([
-          resStats.json(),
-          resInsumos.json(),
-          resAlertas.json(),
-          resFlujo.json(),
-          resList.json()
-        ]);
+        const stats = resStats || {};
+        const insumos = Array.isArray(resInsumos) ? resInsumos : [];
+        const dataFlujo = resFlujo || { historico: [], promedio_mensual: 0 };
+        const facturas = Array.isArray(resList) ? resList : [];
 
-        gastoTotalGlobal = stats.total_comprado || 0;
-        document.getElementById("kpiTotalGasto").innerText = `$${gastoTotalGlobal.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
-        document.getElementById("kpiTotalFacturas").innerText = stats.cantidad_facturas;
+        if (!esReintento && facturas.length === 0 && (stats.cantidad_facturas || 0) === 0) {
+          setTimeout(() => cargarTodo(true), 2500);
+        }
+
+        const gastoPeriodo = stats.total_comprado || 0;
+        document.getElementById("kpiTotalGasto").innerText = `$${gastoPeriodo.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
+        document.getElementById("kpiTotalFacturas").innerText = stats.cantidad_facturas || 0;
         document.getElementById("kpiTopProveedor").innerText = (stats.top_proveedores && stats.top_proveedores[0]) ? stats.top_proveedores[0].proveedor : "N/A";
+        
+        const compromisosMes = stats.compromisos_mes || 0;
+        document.getElementById("kpiFlujoMes").innerText = `$${compromisosMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
 
         const contenedorProv = document.getElementById("listaProveedores");
         contenedorProv.innerHTML = "";
         if (stats.top_proveedores && stats.top_proveedores.length > 0) {
           stats.top_proveedores.forEach(p => {
-            const porcentaje = gastoTotalGlobal > 0 ? ((p.total / gastoTotalGlobal) * 100).toFixed(1) : 0;
+            const porcentaje = gastoPeriodo > 0 ? ((p.total / gastoPeriodo) * 100).toFixed(1) : 0;
             contenedorProv.innerHTML += `
               <div>
                 <div class="flex justify-between text-xs mb-1">
@@ -469,18 +610,9 @@
           `;
         });
 
-        todasLasAlertasCargadas = alertas;
-        renderizarAlertasBanner();
-
         const historialFlujo = dataFlujo.historico || [];
         const promedioFlujo = dataFlujo.promedio_mensual || 0;
         document.getElementById("promedioDesembolsoBadge").innerText = `Promedio: $${promedioFlujo.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
-
-        let montoUltimoMes = 0;
-        if (historialFlujo.length > 0) {
-          montoUltimoMes = historialFlujo[historialFlujo.length - 1].monto;
-        }
-        document.getElementById("kpiFlujoMes").innerText = `$${montoUltimoMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`;
         renderizarGraficoFlujo(historialFlujo, promedioFlujo);
 
         listaFacturas = facturas;
@@ -491,7 +623,103 @@
 
       } catch (err) {
         console.error("Error al cargar datos:", err);
+        if (!esReintento) {
+          setTimeout(() => cargarTodo(true), 2500);
+        }
       }
+    }
+
+    async function cargarAnaliticaCategorias() {
+      try {
+        let qParams = "";
+        if (fechaDesdePeriodo && fechaHastaPeriodo) {
+          qParams = `?desde=${fechaDesdePeriodo}&hasta=${fechaHastaPeriodo}`;
+        }
+
+        const res = await fetch(`${API_URL}/analitica/categorias${qParams}`);
+        const data = await res.json();
+        const categorias = Array.isArray(data) ? data : [];
+
+        const totalGastoCat = categorias.reduce((acc, c) => acc + c.monto, 0);
+        const tbody = document.querySelector("#tableResumenCategorias tbody");
+        tbody.innerHTML = "";
+
+        if (categorias.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin compras registradas en este período.</td></tr>`;
+        } else {
+          categorias.forEach(c => {
+            const pct = totalGastoCat > 0 ? ((c.monto / totalGastoCat) * 100).toFixed(1) : 0;
+            tbody.innerHTML += `
+              <tr class="hover:bg-slate-50">
+                <td class="p-2 font-medium text-slate-700">${c.categoria}</td>
+                <td class="p-2 text-center text-slate-500">${c.unidades}</td>
+                <td class="p-2 text-right font-bold text-slate-800">$${c.monto.toFixed(2)}</td>
+                <td class="p-2 text-right text-blue-600 font-bold">${pct}%</td>
+              </tr>
+            `;
+          });
+        }
+
+        renderizarGraficoCategorias(categorias);
+      } catch (err) {
+        console.error("Error al cargar analítica de categorías:", err);
+      }
+    }
+
+    function renderizarGraficoCategorias(datos) {
+      const ctx = document.getElementById("chartCategoriasDoughnut");
+      if (!ctx) return;
+
+      const labels = datos.map(d => d.categoria);
+      const montos = datos.map(d => d.monto);
+
+      if (miGraficoCategorias) {
+        miGraficoCategorias.destroy();
+      }
+
+      const colores = [
+        "rgba(37, 99, 235, 0.8)",
+        "rgba(16, 185, 129, 0.8)",
+        "rgba(245, 158, 11, 0.8)",
+        "rgba(139, 92, 246, 0.8)",
+        "rgba(239, 68, 68, 0.8)",
+        "rgba(14, 165, 233, 0.8)",
+        "rgba(236, 72, 153, 0.8)",
+        "rgba(100, 116, 139, 0.8)",
+        "rgba(20, 184, 166, 0.8)",
+        "rgba(217, 119, 6, 0.8)"
+      ];
+
+      miGraficoCategorias = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: labels,
+          datasets: [{
+            data: montos,
+            backgroundColor: colores.slice(0, labels.length),
+            borderWidth: 2,
+            borderColor: "#ffffff"
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: { boxWidth: 10, font: { size: 9 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return ` $${context.parsed.toFixed(2)}`;
+                }
+              }
+            }
+          },
+          cutout: "65%"
+        }
+      });
     }
 
     function renderizarGraficoFlujo(datos, promedio) {
@@ -571,8 +799,13 @@
     async function cargarCatalogoMaestro() {
       try {
         const res = await fetch(`${API_URL}/productos/catalogo-maestro`);
-        catalogoCompleto = await res.json();
-        document.getElementById("badgeTotalProductos").innerText = catalogoCompleto.length;
+        const data = await res.json();
+        catalogoCompleto = Array.isArray(data) ? data : (data.productos || []);
+        
+        const badge = document.getElementById("badgeTotalProductos");
+        if (badge) {
+          badge.innerText = catalogoCompleto.length;
+        }
         renderizarTablaCatalogo();
       } catch (err) {
         console.error("Error al cargar catálogo maestro:", err);
@@ -581,18 +814,14 @@
 
     function renderizarTablaCatalogo() {
       const q = document.getElementById("filtroTextoCatalogo").value.trim().toLowerCase();
-      const estado = document.getElementById("filtroEstadoCatalogo").value;
+      const catFiltro = document.getElementById("filtroCategoriaCatalogo").value;
       const tbody = document.querySelector("#tableCatalogoMaestro tbody");
       tbody.innerHTML = "";
 
       const filtrados = catalogoCompleto.filter(p => {
-        const coincideTexto = !q || p.producto.toLowerCase().includes(q) || p.proveedores.some(pr => pr.toLowerCase().includes(q));
-        if (!coincideTexto) return false;
-
-        if (estado === "subidas") return p.tipo_variacion === "SUBIDA";
-        if (estado === "ahorros") return p.tipo_variacion === "AHORRO";
-        if (estado === "estables") return p.tipo_variacion === "ESTABLE";
-        return true;
+        const coincideTexto = !q || p.producto.toLowerCase().includes(q) || (p.proveedores && p.proveedores.some(pr => pr.toLowerCase().includes(q)));
+        const coincideCat = (catFiltro === "todas") || (p.categoria === catFiltro);
+        return coincideTexto && coincideCat;
       });
 
       if (filtrados.length === 0) {
@@ -601,11 +830,21 @@
       }
 
       filtrados.forEach((prod, index) => {
+        const opcionesCat = CATEGORIAS_SISTEMA.map(cat => 
+          `<option value="${cat}" ${prod.categoria === cat ? 'selected' : ''}>${cat}</option>`
+        ).join('');
+
         tbody.innerHTML += `
           <tr class="hover:bg-slate-50 transition">
             <td class="p-3 font-semibold text-slate-800">
               ${prod.producto}
               <span class="block text-[11px] text-slate-400 font-normal">Mejor precio en: <strong class="text-emerald-700">${prod.mejor_proveedor}</strong></span>
+            </td>
+            <td class="p-3">
+              <select onchange="actualizarCategoriaInsumo('${encodeURIComponent(prod.producto)}', this.value)" 
+                      class="border rounded px-2 py-1 text-xs bg-white text-slate-700 focus:ring-1 focus:ring-blue-500 font-medium">
+                ${opcionesCat}
+              </select>
             </td>
             <td class="p-3 text-center text-slate-600 font-mono">${prod.total_compras}</td>
             <td class="p-3 text-center text-slate-600 font-mono">${prod.unidades_totales}</td>
@@ -613,24 +852,12 @@
             <td class="p-3 text-right font-bold text-emerald-600">$${prod.precio_min.toFixed(2)}</td>
             <td class="p-3 text-right font-bold text-slate-700">$${prod.precio_max.toFixed(2)}</td>
             <td class="p-3 text-right text-blue-600 font-medium">$${prod.precio_promedio.toFixed(2)}</td>
-            <td class="p-3 text-center">
-              ${prod.tipo_variacion === 'SUBIDA' ? `
-                <span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-rose-200">
-                  ▲ +${prod.variacion_pct}% más caro
-                </span>
-              ` : (prod.tipo_variacion === 'AHORRO' ? `
-                <span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[10px] border border-emerald-200">
-                  ▼ -${prod.variacion_pct}% ahorro
-                </span>
-              ` : `
-                <span class="bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded-full text-[10px]">
-                  ✓ Estable
-                </span>
-              `)}
-            </td>
-            <td class="p-3 text-center">
-              <button onclick="toggleFilaHistorialCatalogo(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold cursor-pointer">
-                Ver Compras ▼
+            <td class="p-3 text-center flex items-center justify-center gap-1.5">
+              <button onclick="toggleFilaHistorialCatalogo(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+                Compras ▼
+              </button>
+              <button onclick="abrirModalFusionar('${encodeURIComponent(prod.producto)}')" title="Unir con otro producto duplicado" class="bg-blue-50 hover:bg-blue-100 text-blue-700 px-1.5 py-1 rounded text-xs font-bold cursor-pointer">
+                🔗
               </button>
             </td>
           </tr>
@@ -660,7 +887,7 @@
                         <td class="p-1.5 font-semibold text-slate-700">${h.proveedor}</td>
                         <td class="p-1.5 text-slate-400">${h.lote}</td>
                         <td class="p-1.5 text-center">${h.cantidad}</td>                         <td class="p-1.5 text-right font-bold text-slate-900">$${h.precio_unitario.toFixed(2)}</td>
-                        <td class="p-1.5 text-center text-amber-600">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '\%' : '-'}</td>                         <td class="p-1.5 text-right text-slate-700 font-medium">$${h.subtotal.toFixed(2)}</td>
+                        <td class="p-1.5 text-center text-amber-600 font-bold">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '\%' : '-'}</td>                         <td class="p-1.5 text-right text-slate-700 font-medium">$${h.subtotal.toFixed(2)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -672,13 +899,71 @@
       });
     }
 
+    async function abrirModalFusionar(productoPrincipalEncoded) {
+      const productoPrincipal = decodeURIComponent(productoPrincipalEncoded);
+      
+      const productoSecundario = prompt(
+        `FUSIONAR CON: "${productoPrincipal}"\n\nEscribe el nombre EXACTO del producto duplicado que deseas unir y absorber bajo este.\n(Todas las compras de ambos quedarán agrupadas bajo "${productoPrincipal}"):`
+      );
+      
+      if (!productoSecundario || productoSecundario.trim() === "") return;
+      
+      if (!confirm(`¿Confirmas que deseas fusionar "${productoSecundario.trim()}" dentro de "${productoPrincipal}"? Esta acción unificará todo su historial.`)) return;
+
+      try {
+        const res = await fetch(`${API_URL}/catalogo/fusionar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nombre_principal: productoPrincipal,
+            nombre_secundario: productoSecundario.trim()
+          })
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || "Error al fusionar");
+        }
+
+        const data = await res.json();
+        alert(data.mensaje);
+        await cargarTodo();
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    }
+
+    async function actualizarCategoriaInsumo(productoEncoded, nuevaCat) {
+      const producto = decodeURIComponent(productoEncoded);
+      try {
+        const res = await fetch(`${API_URL}/insumos/cambiar-categoria`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            descripcion: producto,
+            nueva_categoria: nuevaCat
+          })
+        });
+
+        if (!res.ok) throw new Error("Error al actualizar categoría");
+        
+        const item = catalogoCompleto.find(p => p.producto === producto);
+        if (item) item.categoria = nuevaCat;
+
+        cargarAnaliticaCategorias();
+
+      } catch (err) {
+        alert("No se pudo guardar la categoría: " + err.message);
+      }
+    }
+
     function toggleFilaHistorialCatalogo(index) {
       const el = document.getElementById(`historial-cat-${index}`);
       if (el) el.classList.toggle("hidden");
     }
 
     document.getElementById("filtroTextoCatalogo").addEventListener("input", renderizarTablaCatalogo);
-    document.getElementById("filtroEstadoCatalogo").addEventListener("change", renderizarTablaCatalogo);
+    document.getElementById("filtroCategoriaCatalogo").addEventListener("change", renderizarTablaCatalogo);
 
     let timeoutBusqueda = null;
 
@@ -721,29 +1006,14 @@
           
           const compraMasBarata = compras.reduce((prev, curr) => (curr.precio_unitario < prev.precio_unitario ? curr : prev), compras[0]);
           const compraMasCara = compras.reduce((prev, curr) => (curr.precio_unitario > prev.precio_unitario ? curr : prev), compras[0]);
-          
-          const diferenciaCentavos = Math.abs(precioMax - precioMin);
-          const tieneDiscrepancia = diferenciaCentavos >= 0.005 && compras.length > 1;
-          const variacionPorcentual = precioMin > 0 ? (((precioMax - precioMin) / precioMin) * 100).toFixed(1) : 0;
 
           listaTarjetas.innerHTML += `
             <div class="border rounded-xl p-4 bg-white shadow-xs transition border-slate-200">
               
               <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3 pb-3 border-b border-slate-100">
                 <div>
-                  <div class="flex items-center gap-2">
-                    <h3 class="font-bold text-slate-800 text-sm md:text-base">${prod.producto}</h3>
-                    ${tieneDiscrepancia ? `
-                      <span class="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200">
-                        ⚠️ Variación de +${variacionPorcentual}%
-                      </span>
-                    ` : `
-                      <span class="bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-200">
-                        ✓ Precio Estable
-                      </span>
-                    `}
-                  </div>
-                  <span class="text-xs text-slate-400">Total compras: ${prod.veces_comprado} (${prod.unidades_totales} unidades adquiridas)</span>
+                  <h3 class="font-bold text-slate-800 text-sm md:text-base">${prod.producto}</h3>
+                  <span class="text-xs text-slate-400">Total compras: ${prod.total_compras} (${prod.unidades_totales} unidades adquiridas) | Categoría: <strong class="text-slate-600">${prod.categoria}</strong></span>
                 </div>
 
                 <button onclick="toggleHistorialProd(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer">
@@ -753,35 +1023,28 @@
 
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs mb-2">
                 
-                ${tieneDiscrepancia ? `
-                  <div class="bg-emerald-50/70 border border-emerald-200 rounded-lg p-2.5">
-                    <div class="flex justify-between items-center text-[10px] text-emerald-800 font-bold uppercase">
-                      <span>🟢 Compra Más Barata</span>
-                      <span>${compraMasBarata.fecha}</span>                     </div>                     <div class="text-lg font-black text-emerald-700 mt-0.5">$${precioMin.toFixed(2)}</div>
-                    <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasBarata.proveedor}</strong></div>
+                <div class="bg-emerald-50/70 border border-emerald-200 rounded-lg p-2.5">
+                  <div class="flex justify-between items-center text-[10px] text-emerald-800 font-bold uppercase">
+                    <span>🟢 Compra Más Barata</span>
+                    <span>${compraMasBarata.fecha}</span>
                   </div>
+                  <div class="text-lg font-black text-emerald-700 mt-0.5">$${precioMin.toFixed(2)}</div>
+                  <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasBarata.proveedor}</strong></div>
+                </div>
 
-                  <div class="bg-rose-50/70 border border-rose-200 rounded-lg p-2.5">
-                    <div class="flex justify-between items-center text-[10px] text-rose-800 font-bold uppercase">
-                      <span>🔴 Compra Más Cara</span>
-                      <span>${compraMasCara.fecha}</span>                     </div>                     <div class="text-lg font-black text-rose-700 mt-0.5">$${precioMax.toFixed(2)}</div>
-                    <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasCara.proveedor}</strong></div>
+                <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                  <div class="flex justify-between items-center text-[10px] text-slate-600 font-bold uppercase">
+                    <span>Máximo Facturado</span>
+                    <span>${compraMasCara.fecha}</span>
                   </div>
-                ` : `
-                  <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 sm:col-span-2">
-                    <div class="flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase">
-                      <span>✓ Precio Fijo / Vigente</span>
-                      <span class="text-emerald-700 font-semibold">Sin sobrecostos</span>
-                    </div>
-                    <div class="text-lg font-black text-slate-800 mt-0.5">$${prod.ultimo_precio.toFixed(2)}</div>
-                    <div class="text-slate-500 truncate mt-0.5">Comprado a: <strong class="text-slate-700">${prod.mejor_proveedor}</strong></div>
-                  </div>
-                `}
+                  <div class="text-lg font-black text-slate-800 mt-0.5">$${precioMax.toFixed(2)}</div>
+                  <div class="text-slate-600 truncate mt-0.5">En: <strong class="text-slate-800">${compraMasCara.proveedor}</strong></div>
+                </div>
 
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                   <span class="text-[10px] text-slate-500 font-bold uppercase block">Promedio Real</span>
                   <div class="text-lg font-black text-blue-700 mt-0.5">$${prod.precio_promedio.toFixed(2)}</div>
-                  <div class="text-slate-500 mt-0.5 text-[11px]">En ${prod.veces_comprado} factura(s)</div>
+                  <div class="text-slate-500 mt-0.5 text-[11px]">En ${prod.total_compras} factura(s)</div>
                 </div>
 
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
@@ -802,39 +1065,19 @@
                       <th class="p-2 text-center">Cant.</th>
                       <th class="p-2 text-right">Precio Facturado</th>
                       <th class="p-2 text-center">% Dcto</th>
-                      <th class="p-2 text-center">Estado</th>
+                      <th class="p-2 text-right">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100">
-                    ${compras.map(h => {
-                      const esMinimo = h.precio_unitario === precioMin;
-                      const sobrecosto = precioMin > 0 ? (((h.precio_unitario - precioMin) / precioMin) * 100).toFixed(1) : 0;
-
-                      return `
-                        <tr class="${tieneDiscrepancia && esMinimo ? 'bg-emerald-50/40' : 'hover:bg-slate-50'}">
-                          <td class="p-2 text-slate-500">${h.fecha}</td>
-                          <td class="p-2 font-mono text-slate-500">#${h.numero_factura}</td>
-                          <td class="p-2 font-semibold text-slate-800">${h.proveedor}</td>
-                          <td class="p-2 text-center">${h.cantidad}</td>                           <td class="p-2 text-right font-bold text-slate-900">$${h.precio_unitario.toFixed(2)}</td>
-                          <td class="p-2 text-center text-amber-600 font-medium">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '%' : '-'}</td>
-                          <td class="p-2 text-center">
-                            ${!tieneDiscrepancia ? `
-                              <span class="inline-flex items-center text-slate-600 bg-slate-100 font-medium px-2 py-0.5 rounded text-[10px]">
-                                Normal
-                              </span>
-                            ` : (esMinimo ? `
-                              <span class="inline-flex items-center text-emerald-700 bg-emerald-100/80 font-bold px-2 py-0.5 rounded text-[10px]">
-                                🟢 Mejor Compra
-                              </span>
-                            ` : `
-                              <span class="inline-flex items-center text-rose-700 bg-rose-50 border border-rose-200 font-medium px-2 py-0.5 rounded text-[10px]">
-                                🔴 +${sobrecosto}% más caro
-                              </span>
-                            `)}
-                          </td>
-                        </tr>
-                      `;
-                    }).join('')}
+                    ${compras.map(h => `
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-2 text-slate-500">${h.fecha}</td>
+                        <td class="p-2 font-mono text-slate-500">#${h.numero_factura}</td>
+                        <td class="p-2 font-semibold text-slate-800">${h.proveedor}</td>
+                        <td class="p-2 text-center">${h.cantidad}</td>                         <td class="p-2 text-right font-bold text-slate-900">$${h.precio_unitario.toFixed(2)}</td>
+                        <td class="p-2 text-center text-amber-600 font-bold">${h.porcentaje_descuento > 0 ? h.porcentaje_descuento + '\%' : '-'}</td>                         <td class="p-2 text-right text-slate-700 font-medium">$${h.subtotal.toFixed(2)}</td>
+                      </tr>
+                    `).join('')}
                   </tbody>
                 </table>
               </div>
@@ -852,126 +1095,6 @@
     function toggleHistorialProd(index) {
       const el = document.getElementById(`historial-prod-${index}`);
       if (el) el.classList.toggle("hidden");
-    }
-
-    function renderizarAlertasBanner() {
-      const contAlertas = document.getElementById("alertaPreciosContenedor");
-      const listaAlertas = document.getElementById("listaAlertas");
-      listaAlertas.innerHTML = "";
-
-      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
-      const alertasActivas = todasLasAlertasCargadas.filter(a => !descartadas.includes(a.id_alerta));
-
-      if (alertasActivas && alertasActivas.length > 0) {
-        contAlertas.classList.remove("hidden");
-        alertasActivas.forEach(a => {
-          const esSubida = a.tipo === "INCREMENTO";
-
-          listaAlertas.innerHTML += `
-            <div id="alerta-card-${a.id_alerta}" class="p-3 rounded-lg border ${esSubida ? 'bg-rose-50/70 border-rose-200' : 'bg-emerald-50/70 border-emerald-200'} shadow-xs flex flex-col justify-between">
-              <div>
-                <div class="flex justify-between items-start gap-2">
-                  <span class="font-bold text-slate-800 text-xs">${a.producto}</span>
-                  <span class="font-bold px-1.5 py-0.5 rounded text-[11px] ${esSubida ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'}">
-                    ${esSubida ? `▲ +$${a.diferencia_dinero.toFixed(2)} (+${a.porcentaje}%)` : `▼ -$${a.diferencia_dinero.toFixed(2)} (-${a.porcentaje}%)`}
-                  </span>
-                </div>
-                <div class="text-[11px] text-slate-500 mt-1">
-                  Proveedor: <strong class="text-slate-700">${a.proveedor}</strong>
-                  ${a.proveedor !== a.proveedor_anterior ? `<span class="text-slate-400"> (antes: ${a.proveedor_anterior})</span>` : ""}
-                </div>
-                <div class="mt-1 text-xs">
-                  <span>Antes: $${a.precio_anterior.toFixed(2)} → <strong class="${esSubida ? 'text-rose-600' : 'text-emerald-700'}">Ahora: $${a.precio_actual.toFixed(2)}</strong></span>
-                </div>
-              </div>
-
-              <div class="mt-2.5 pt-2 border-t ${esSubida ? 'border-rose-200/60' : 'border-emerald-200/60'} flex justify-between items-center text-[11px]">
-                <span class="text-slate-400 text-[10px]">${a.fecha_actual}</span>
-                <button onclick="descartarAlerta('${a.id_alerta}')" class="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer">
-                  Entendido / Descartar ✕
-                </button>
-              </div>
-            </div>
-          `;
-        });
-      } else {
-        contAlertas.classList.add("hidden");
-      }
-    }
-
-    function descartarAlerta(idAlerta) {
-      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
-      if (!descartadas.includes(idAlerta)) {
-        descartadas.push(idAlerta);
-        localStorage.setItem("alertas_descartadas", JSON.stringify(descartadas));
-      }
-      renderizarAlertasBanner();
-    }
-
-    function abrirModalHistoricoAlertas() {
-      const tbody = document.querySelector("#tableModalAlertas tbody");
-      tbody.innerHTML = "";
-      const descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
-
-      document.getElementById("contadorAlertasModal").innerText = `Total registros históricos: ${todasLasAlertasCargadas.length}`;
-
-      if (todasLasAlertasCargadas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">No hay variaciones de precios registradas.</td></tr>`;
-      } else {
-        todasLasAlertasCargadas.forEach(a => {
-          const estaDescartada = descartadas.includes(a.id_alerta);
-          const esSubida = a.tipo === "INCREMENTO";
-
-          tbody.innerHTML += `
-            <tr class="hover:bg-slate-50">
-              <td class="p-2.5 text-slate-500">${a.fecha_actual}</td>
-              <td class="p-2.5 font-medium text-slate-800">${a.producto}</td>
-              <td class="p-2.5 text-slate-600">${a.proveedor}</td>
-              <td class="p-2.5 text-right text-slate-500">$${a.precio_anterior.toFixed(2)}</td>
-              <td class="p-2.5 text-right font-bold text-slate-800">$${a.precio_actual.toFixed(2)}</td>
-              <td class="p-2.5 text-center font-bold ${esSubida ? 'text-rose-600' : 'text-emerald-600'}">
-                ${esSubida ? '+' : '-'}$${a.diferencia_dinero.toFixed(2)} (${a.porcentaje}%)
-              </td>
-              <td class="p-2.5 text-center">
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${estaDescartada ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-800'}">
-                  ${estaDescartada ? 'Archivada' : 'Visible en panel'}
-                </span>
-              </td>
-              <td class="p-2.5 text-center">
-                ${estaDescartada ? `
-                  <button onclick="restaurarAlertaIndividual('${a.id_alerta}')" class="text-blue-600 hover:text-blue-800 font-semibold cursor-pointer">
-                    ↩ Restaurar
-                  </button>
-                ` : `
-                  <button onclick="descartarAlerta('${a.id_alerta}'); abrirModalHistoricoAlertas();" class="text-slate-400 hover:text-slate-600 cursor-pointer">
-                    Ocultar
-                  </button>
-                `}
-              </td>
-            </tr>
-          `;
-        });
-      }
-
-      document.getElementById("modalHistoricoAlertas").classList.remove("hidden");
-    }
-
-    function cerrarModalHistoricoAlertas() {
-      document.getElementById("modalHistoricoAlertas").classList.add("hidden");
-    }
-
-    function restaurarAlertaIndividual(idAlerta) {
-      let descartadas = JSON.parse(localStorage.getItem("alertas_descartadas") || "[]");
-      descartadas = descartadas.filter(id => id !== idAlerta);
-      localStorage.setItem("alertas_descartadas", JSON.stringify(descartadas));
-      renderizarAlertasBanner();
-      abrirModalHistoricoAlertas();
-    }
-
-    function restaurarTodasLasAlertas() {
-      localStorage.removeItem("alertas_descartadas");
-      renderizarAlertasBanner();
-      abrirModalHistoricoAlertas();
     }
 
     function renderizarTabla() {
@@ -995,12 +1118,46 @@
 
       facturasPagina.forEach(f => {
         const estaPagado = f.estado_pago === "Pagado";
+        const urls = f.url_factura ? f.url_factura.split(',').map(u => u.trim()).filter(Boolean) : [];
+
+        let botonesVerSubir = '';
+        if (urls.length > 0) {
+          if (urls.length === 1) {
+            botonesVerSubir = `
+              <a href="${urls[0]}" target="_blank" title="Ver Comprobante" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded text-xs font-semibold">
+                📄 Ver
+              </a>
+            `;
+          } else {
+            botonesVerSubir = urls.map((u, idx) => `
+              <a href="${u}" target="_blank" title="Ver Hoja ${idx + 1}" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-1.5 py-1 rounded text-[11px] font-semibold">
+                📄 H${idx + 1}
+              </a>
+            `).join('');
+          }
+          botonesVerSubir += `
+            <button onclick="iniciarSubidaArchivo(${f.id})" title="Añadir otra hoja" class="text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-1 rounded text-[11px] font-bold cursor-pointer">
+              +
+            </button>
+          `;
+        } else {
+          botonesVerSubir = `
+            <button onclick="iniciarSubidaArchivo(${f.id})" title="Subir factura física / PDF" class="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+              📤 Subir
+            </button>
+          `;
+        }
+
+        const infoAuditoria = (f.created_at || f.dispositivo_origen)
+          ? `<span class="block text-[10px] text-slate-400 font-normal">📥 Subido: ${f.created_at || 'S/F'} (${f.dispositivo_origen || 'Local'})</span>`
+          : '';
 
         tbody.innerHTML += `
           <tr class="hover:bg-slate-50 transition">
             <td class="p-3 text-slate-400 font-mono text-xs">#${f.id}</td>
             <td class="p-3 font-semibold text-slate-800">
               ${f.proveedor}
+              ${infoAuditoria}
               ${f.comentario ? `<span class="block text-[11px] text-slate-500 font-normal italic truncate max-w-xs" title="${f.comentario}">💬 ${f.comentario}</span>` : ""}
             </td>
             <td class="p-3 text-slate-600">${f.numero_factura}</td>
@@ -1025,6 +1182,7 @@
             <td class="p-3 text-right font-bold text-slate-900">$${f.total.toFixed(2)}</td>
             <td class="p-3 text-center">
               <div class="flex justify-center items-center gap-1.5">
+                ${botonesVerSubir}
                 <button onclick="abrirModalComentario(${f.id}, '${f.comentario || ''}')" title="Agregar o editar nota" class="text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
                   💬 Nota
                 </button>
@@ -1032,7 +1190,7 @@
                   ✏️
                 </button>
                 <button onclick="eliminarFactura(${f.id})" class="text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
-                  🗑️
+                  🗑️️
                 </button>
               </div>
             </td>
@@ -1044,6 +1202,39 @@
       document.getElementById("btnPrev").disabled = (currentPage === 1);
       document.getElementById("btnNext").disabled = (currentPage === totalPages);
     }
+
+    function iniciarSubidaArchivo(facturaId) {
+      facturaParaSubirArchivoId = facturaId;
+      const input = document.getElementById("inputAdjuntarFacturaOculto");
+      input.value = "";
+      input.click();
+    }
+
+    document.getElementById("inputAdjuntarFacturaOculto").addEventListener("change", async (e) => {
+      const files = e.target.files;
+      if (!files || files.length === 0 || !facturaParaSubirArchivoId) return;
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/facturas/${facturaParaSubirArchivoId}/subir-archivo`, {
+          method: "PATCH",
+          body: formData
+        });
+
+        if (!res.ok) throw new Error("No se pudo subir el comprobante.");
+
+        alert("¡Comprobante(s) adjuntado(s) con éxito!");
+        await cargarTodo();
+      } catch (err) {
+        alert("Error al subir archivo: " + err.message);
+      } finally {
+        facturaParaSubirArchivoId = null;
+      }
+    });
 
     async function alternarEstadoPago(facturaId, estadoActual) {
       const nuevoEstado = estadoActual === "Pagado" ? "Pendiente" : "Pagado";
@@ -1109,24 +1300,32 @@
       if (!factura) return;
 
       document.getElementById("modalTitulo").innerText = `Factura N° ${factura.numero_factura}`;
-      document.getElementById("modalSubtitulo").innerText = `Proveedor: ${factura.proveedor} | Emisión: ${factura.fecha_emision || "N/A"} | Estado: ${factura.estado_pago}`;
+      const urls = factura.url_factura ? factura.url_factura.split(',').map(u => u.trim()).filter(Boolean) : [];
+      let enlacesHojas = '';
+      if (urls.length === 1) {
+        enlacesHojas = ` | <a href="${urls[0]}" target="_blank" class="text-blue-600 underline font-bold">Abrir Comprobante ↗</a>`;
+      } else if (urls.length > 1) {
+        enlacesHojas = ' | Hojas: ' + urls.map((u, i) => `<a href="${u}" target="_blank" class="text-blue-600 underline font-bold mx-1">Hoja ${i + 1} ↗</a>`).join('');
+      }
+      document.getElementById("modalSubtitulo").innerHTML = `Proveedor: ${factura.proveedor} | Emisión: ${factura.fecha_emision || "N/A"} | Estado: ${factura.estado_pago}${enlacesHojas}`;
 
       const tbody = document.querySelector("#tableModalItems tbody");
       tbody.innerHTML = "";
 
       if (!factura.items || factura.items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin líneas registradas.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin líneas registradas.</td></tr>`;
       } else {
         factura.items.forEach(it => {
           tbody.innerHTML += `
             <tr class="hover:bg-slate-50">
               <td class="p-2.5 font-medium text-slate-700">
                 ${it.descripcion}
-                ${it.lote ? `<span class="block text-[10px] text-slate-400">Lote: ${it.lote}</span>` : ""}
+                ${it.lote && it.lote !== 'N/A' ? `<span class="block text-[10px] text-slate-400">Lote: ${it.lote}</span>` : ""}
               </td>
+              <td class="p-2.5 text-slate-500 font-semibold">${it.categoria || 'General'}</td>
               <td class="p-2.5 text-center text-slate-600">${it.cantidad}</td>
               <td class="p-2.5 text-right text-slate-500">$${it.precio_unitario.toFixed(2)}</td>
-              <td class="p-2.5 text-center text-amber-600 font-semibold">${it.porcentaje_descuento > 0 ? it.porcentaje_descuento + '%' : '-'}</td>
+              <td class="p-2.5 text-center text-amber-600 font-bold">${it.porcentaje_descuento > 0 ? it.porcentaje_descuento + '%' : '-'}</td>
               <td class="p-2.5 text-right font-bold text-slate-900">$${it.subtotal.toFixed(2)}</td>
             </tr>
           `;
@@ -1165,21 +1364,37 @@
       tbody.innerHTML = "";
 
       factura.items.forEach(it => {
-        agregarFilaEdicion(it.descripcion, it.cantidad, it.precio_unitario, it.porcentaje_descuento);
+        agregarFilaEdicion(
+          it.descripcion,
+          it.categoria || "General",
+          it.cantidad, 
+          it.precio_unitario, 
+          it.porcentaje_descuento || 0
+        );
       });
 
       document.getElementById("modalEditar").classList.remove("hidden");
     }
 
-    function agregarFilaEdicion(desc = "", cant = 1, precio = 0.0, dcto = 0.0) {
+    function agregarFilaEdicion(desc = "", cat = "General", cant = 1, precio = 0.0, dcto = 0.0) {
       const tbody = document.querySelector("#tableEditItems tbody");
       const tr = document.createElement("tr");
       tr.className = "hover:bg-slate-50";
+
+      const opcionesCat = CATEGORIAS_SISTEMA.map(c => 
+        `<option value="${c}" ${cat === c ? 'selected' : ''}>${c}</option>`
+      ).join('');
+
       tr.innerHTML = `
         <td class="p-2"><input type="text" class="edit-desc w-full border rounded p-1 text-xs" value="${desc}"></td>
+        <td class="p-2">
+          <select class="edit-cat w-full border rounded p-1 text-xs font-medium">
+            ${opcionesCat}
+          </select>
+        </td>
         <td class="p-2"><input type="number" step="any" class="edit-cant w-full border rounded p-1 text-xs text-center" value="${cant}"></td>
         <td class="p-2"><input type="number" step="0.01" class="edit-precio w-full border rounded p-1 text-xs text-right" value="${precio}"></td>
-        <td class="p-2"><input type="number" step="0.1" class="edit-dcto w-full border rounded p-1 text-xs text-center" value="${dcto}"></td>
+        <td class="p-2"><input type="number" step="0.1" class="edit-dcto w-full border rounded p-1 text-xs text-center font-bold text-amber-700" value="${dcto}"></td>
         <td class="p-2 text-center">
           <button onclick="this.closest('tr').remove()" class="text-rose-500 hover:text-rose-700 font-bold cursor-pointer">&times;</button>
         </td>
@@ -1202,6 +1417,7 @@
       const itemsActualizados = [];
       filas.forEach(r => {
         const desc = r.querySelector(".edit-desc").value.trim();
+        const cat = r.querySelector(".edit-cat").value.trim();
         const cant = parseFloat(r.querySelector(".edit-cant").value) || 0;
         const precio = parseFloat(r.querySelector(".edit-precio").value) || 0;
         const dcto = parseFloat(r.querySelector(".edit-dcto").value) || 0;
@@ -1209,6 +1425,7 @@
         if (desc.length > 0 && cant > 0) {
           itemsActualizados.push({
             descripcion: desc,
+            categoria: cat,
             cantidad: cant,
             precio_unitario: precio,
             porcentaje_descuento: dcto
@@ -1246,7 +1463,6 @@
       if (e.key === "Escape") {
         cerrarModal();
         cerrarModalEditar();
-        cerrarModalHistoricoAlertas();
       }
     });
 
@@ -1279,7 +1495,9 @@
       renderizarTabla();
     });
 
-    window.addEventListener("DOMContentLoaded", cargarTodo);
+    window.addEventListener("DOMContentLoaded", () => {
+      setPeriodo("todos");
+    });
   </script>
 </body>
 </html>

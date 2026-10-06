@@ -2,8 +2,9 @@ import os
 import io
 import sys
 import asyncio
-from typing import List, Optional, Tuple
-from pydantic import BaseModel, Field
+import re
+from typing import List, Optional, Tuple, Any
+from pydantic import BaseModel, Field, field_validator
 from PIL import Image
 from dotenv import load_dotenv
 from google import genai
@@ -22,43 +23,42 @@ else:
     load_dotenv()
 
 class ItemFacturaAI(BaseModel):
-    descripcion: str = Field(description="Nombre o descripción concisa del insumo o servicio")
+    descripcion: str = Field(default="", description="Nombre o descripción concisa del insumo")
     lote: Optional[str] = Field(default="N/A", description="Número de lote si aparece, sino N/A")
-    cantidad: float = Field(default=1.0, description="Cantidad física adquirida")
-    precio_unitario: float = Field(default=0.0, description="Precio unitario bruto de lista")
-    porcentaje_descuento: float = Field(default=0.0, description="Porcentaje de descuento aplicado (0 a 100)")
+    fecha_caducidad: Optional[str] = Field(default=None, description="Fecha de vencimiento/caducidad YYYY-MM-DD o null")
+    cantidad: float = Field(default=1.0, description="Cantidad física")
+    precio_unitario: float = Field(default=0.0, description="Precio unitario")
+    porcentaje_descuento: float = Field(default=0.0, description="Descuento (0 a 100)")
     subtotal: float = Field(default=0.0, description="Subtotal neto final tras descuento")
-    categoria: Optional[str] = Field(
-        default="General", 
-        description=(
-            "Categoría exacta según el tipo de producto odontológico: "
-            "'Restauración & Estética' (resinas, adhesivos, composites, ácidos), "
-            "'Endodoncia' (limas, conos gutapercha/papel, cementos endo, irrigantes), "
-            "'Ortodoncia' (brackets, arcos, ligaduras, tubos, botones), "
-            "'Periodoncia & Profilaxis' (pastas profilácticas, copas de caucho, curetas), "
-            "'Impresión & Modelos' (alginatos, siliconas, yesos, cubetas), "
-            "'Prótesis & Laboratorio' (acrílicos, dientes, ceras, discos), "
-            "'Instrumental & Fresas' (fresas diamante/carburo, pinzas, espejos, exploradores), "
-            "'Bioseguridad & Esterilización' (guantes, mascarillas, baberos, eyectores, campos, fundas autoclave, desinfectantes), "
-            "'Equipos & Repuestos' (lámparas fotocurado, turbinas, repuestos sillón), "
-            "'Gasto Operativo' (fletes, envíos, transporte, embalaje), "
-            "o 'General'."
-        )
-    )
+    categoria: Optional[str] = Field(default="General", description="Categoría clínica")
+
+    @field_validator("fecha_caducidad", mode="before")
+    @classmethod
+    def normalizar_fecha(cls, v: Any) -> Optional[str]:
+        if not v or str(v).lower() in ["none", "null", "n/a", "s/f", ""]:
+            return None
+        v_str = str(v).strip()
+        m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$", v_str)
+        if m:
+            d, mes, a = m.groups()
+            return f"{a}-{mes.zfill(2)}-{d.zfill(2)}"
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", v_str):
+            return v_str
+        return None
 
 class FacturaExtraccionAI(BaseModel):
-    proveedor_nombre: str = Field(description="Razón social del emisor")
-    proveedor_id_fiscal: str = Field(description="RUC o Cédula. Si no existe, '9999999999999'")
-    numero_factura: str = Field(description="Número de factura o comprobante (ej: 001-011-000006114)")
-    fecha_emision: Optional[str] = Field(default=None, description="Fecha de emisión YYYY-MM-DD")
-    numero_autorizacion: Optional[str] = Field(default=None, description="Número de autorización fiscal")
-    base_iva_0: float = Field(default=0.0, description="Subtotal tarifa 0%")
-    base_iva_grabada: float = Field(default=0.0, description="Subtotal base imponible gravada (15%)")
-    subtotal: float = Field(default=0.0, description="Subtotal general de la factura")
-    descuento_total: float = Field(default=0.0, description="Descuento total de la factura")
-    impuestos: float = Field(default=0.0, description="Valor del IVA liquidado")
-    total: float = Field(default=0.0, description="Total final consolidado a pagar")
-    items: List[ItemFacturaAI] = Field(default_factory=list, description="Lista unificada de todas las hojas")
+    proveedor_nombre: str = Field(default="Proveedor General", description="Razón social del emisor")
+    proveedor_id_fiscal: str = Field(default="9999999999999", description="RUC o Cédula")
+    numero_factura: str = Field(default="S/N", description="Número de factura o comprobante")
+    fecha_emision: Optional[str] = Field(default=None, description="Fecha emisión YYYY-MM-DD")
+    numero_autorizacion: Optional[str] = Field(default=None, description="Autorización SRI")
+    base_iva_0: float = Field(default=0.0)
+    base_iva_grabada: float = Field(default=0.0)
+    subtotal: float = Field(default=0.0)
+    descuento_total: float = Field(default=0.0)
+    impuestos: float = Field(default=0.0)
+    total: float = Field(default=0.0)
+    items: List[ItemFacturaAI] = Field(default_factory=list)
 
 def obtener_claves_api() -> List[str]:
     raw_keys = os.getenv("GEMINI_API_KEY", "")
@@ -86,16 +86,17 @@ async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> Fact
     claves = obtener_claves_api()
 
     prompt = (
-        "Eres un auditor y clasificador experto en insumos de odontología y depósitos dentales. "
-        "Se te proporcionan una o varias hojas que pertenecen a la MISMA factura comercial. "
-        "Consolida todos los ítems de todas las páginas en una única lista secuencial. "
-        "DISTINCIÓN DE GASTOS: Si un ítem corresponde a flete, transporte, envío, embalaje o servicios logísticos y no a un insumo, asigna en 'categoria' el valor exacto 'Gasto Operativo'. "
-        "CATEGORÍAS CLÍNICAS PRECISAS: Clasifica cada producto en una de las siguientes opciones obligatorias: "
-        "'Restauración & Estética', 'Endodoncia', 'Ortodoncia', 'Periodoncia & Profilaxis', "
-        "'Impresión & Modelos', 'Prótesis & Laboratorio', 'Instrumental & Fresas', "
-        "'Bioseguridad & Esterilización', 'Equipos & Repuestos', o 'General'. "
-        "ATENCIÓN A DESCUENTOS: Si una línea tiene descuento, extrae el porcentaje en 'porcentaje_descuento' (0 a 100). "
-        "Para 'descripcion', extrae únicamente el nombre conciso comercial del insumo sin textos accesorios."
+        "Eres un auditor y clasificador experto en insumos odontológicos. "
+        "Consolida todos los ítems de las hojas de la factura. "
+        "CAMPOS OBLIGATORIOS POR ÍTEM: "
+        "- 'descripcion': nombre conciso del insumo. "
+        "- 'lote': número de lote o 'N/A' si no figura. "
+        "- 'fecha_caducidad': fecha de vencimiento o EXP en formato 'YYYY-MM-DD' o null si no figura. "
+        "- 'cantidad', 'precio_unitario', 'porcentaje_descuento', 'subtotal'. "
+        "- 'categoria': clasifica en 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', "
+        "'Periodoncia & Profilaxis', 'Impresión & Modelos', 'Prótesis & Laboratorio', "
+        "'Instrumental & Fresas', 'Bioseguridad & Esterilización', 'Equipos & Repuestos', "
+        "'Gasto Operativo' o 'General'."
     )
 
     partes = []
@@ -105,7 +106,7 @@ async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> Fact
 
     partes.append(prompt)
 
-    modelos_confirmados = [
+    modelos = [
         "gemini-flash-lite-latest",
         "gemini-3.7-flash",
         "gemini-3.1-flash-lite"
@@ -116,7 +117,7 @@ async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> Fact
     for api_key in claves:
         client = genai.Client(api_key=api_key)
 
-        for model_name in modelos_confirmados:
+        for model_name in modelos:
             try:
                 response = await asyncio.to_thread(
                     client.models.generate_content,
@@ -133,13 +134,9 @@ async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> Fact
                     resultado = FacturaExtraccionAI.model_validate_json(response.text.strip())
                     return resultado
 
-            except APIError as err:
-                ultimo_error = err
-                await asyncio.sleep(0.3)
-                continue
             except Exception as e:
                 ultimo_error = e
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
                 continue
 
-    raise RuntimeError(f"Fallo al procesar comprobante multi-hoja: {str(ultimo_error)}")
+    raise RuntimeError(f"Fallo al procesar con IA: {str(ultimo_error)}")

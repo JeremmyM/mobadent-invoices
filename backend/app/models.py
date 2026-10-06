@@ -50,7 +50,8 @@ class DetalleFactura(Base):
     factura_id = Column(Integer, ForeignKey("facturas.id", ondelete="CASCADE"), nullable=False)
     descripcion = Column(String(500), nullable=False)
     categoria = Column(String(100), default="General")
-    lote = Column(String(100), default="N/A", nullable=True)
+    lote = Column(String(100), default="N/A")
+    fecha_caducidad = Column(Date, nullable=True)  # <-- Indispensable
     cantidad = Column(Float, default=1.0)
     precio_unitario = Column(Float, default=0.0)
     porcentaje_descuento = Column(Float, default=0.0)

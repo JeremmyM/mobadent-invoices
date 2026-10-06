@@ -45,7 +45,7 @@ def puerto_activo(host="127.0.0.1", port=8000) -> bool:
 def abrir_ventana():
     url = "http://127.0.0.1:8000/frontend/dashboard.html"
     
-    # Sondeo rápido: abre apenas el puerto 8000 responda
+    # Espera a que el backend esté listo
     for _ in range(80):
         if puerto_activo():
             break

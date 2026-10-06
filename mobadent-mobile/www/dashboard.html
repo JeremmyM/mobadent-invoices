@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="config.js"></script>
   <script src="db.js"></script>
+  <script src="auth-lock.js"></script>
   <style>
     :root {
       --safe-top: env(safe-area-inset-top, 20px);
@@ -40,7 +41,7 @@
         <span id="badgeEstadoConexion" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 shadow-2xs">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Conectando...
         </span>
-        <button onclick="recargarDatosActivos()" class="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200/80 active:scale-95 text-slate-600 flex items-center justify-center text-xs transition">
+        <button onclick="recargarDatosActivos()" class="w-8 h-8 rounded-xl bg-white shadow-xs border border-slate-200/80 active:scale-95 text-slate-600 flex items-center justify-center text-xs transition cursor-pointer">
           🔄
         </button>
       </div>
@@ -163,7 +164,7 @@
 
   </main>
 
-  <!-- MODAL: VER PRODUCTOS -->
+  <!-- MODAL: VER PRODUCTOS CON BADGE DE CADUCIDAD -->
   <div id="modalDetalleFactura" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full p-5 max-h-[85vh] flex flex-col">
       <div class="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
@@ -171,14 +172,14 @@
           <h3 class="text-sm font-bold text-slate-900" id="modalDetalleTitulo">Detalle de Factura</h3>
           <p class="text-[11px] text-slate-400 font-medium" id="modalDetalleSubtitulo"></p>
         </div>
-        <button onclick="cerrarModalDetalle()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none">&times;</button>
+        <button onclick="cerrarModalDetalle()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none cursor-pointer">&times;</button>
       </div>
 
-      <div class="overflow-y-auto flex-1 space-y-2 pr-1" id="modalDetalleListaItems"></div>
+      <div class="overflow-y-auto flex-1 space-y-2.5 pr-1" id="modalDetalleListaItems"></div>
 
       <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-sm font-bold">
         <span class="text-slate-500">Total Comprobante:</span>
-        <span class="text-slate-900 text-lg font-black" id="modalDetalleTotalTxt">$0.00</span>
+        <span class="text-slate-900 text-lg font-black font-mono" id="modalDetalleTotalTxt">$0.00</span>
       </div>
     </div>
   </div>
@@ -191,7 +192,7 @@
           <h3 class="text-sm font-bold text-slate-900">Editar Comprobante</h3>
           <p class="text-[11px] text-slate-400">Modifica número, fecha o monto</p>
         </div>
-        <button onclick="cerrarModalEditar()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none">&times;</button>
+        <button onclick="cerrarModalEditar()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 hover:text-slate-800 text-lg font-bold flex items-center justify-center leading-none cursor-pointer">&times;</button>
       </div>
 
       <div class="space-y-3 text-xs flex-1 overflow-y-auto">
@@ -214,8 +215,8 @@
       </div>
 
       <div class="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-3">
-        <button onclick="cerrarModalEditar()" class="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600">Cancelar</button>
-        <button onclick="guardarEdicionFactura()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm shadow-blue-500/30">Guardar</button>
+        <button onclick="cerrarModalEditar()" class="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 cursor-pointer">Cancelar</button>
+        <button onclick="guardarEdicionFactura()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm shadow-blue-500/30 cursor-pointer">Guardar</button>
       </div>
     </div>
   </div>
@@ -240,7 +241,7 @@
         <a id="btnDescargarActualizacion" href="#" target="_blank" class="w-full block py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-blue-500/30 active:scale-95 transition">
           Descargar e Instalar
         </a>
-        <button id="btnPosponerActualizacion" onclick="cerrarModalActualizacion()" class="w-full py-2.5 text-xs text-slate-400 font-semibold hover:text-slate-600 transition">
+        <button id="btnPosponerActualizacion" onclick="cerrarModalActualizacion()" class="w-full py-2.5 text-xs text-slate-400 font-semibold hover:text-slate-600 transition cursor-pointer">
           Recordármelo más tarde
         </button>
       </div>
@@ -250,19 +251,19 @@
   <!-- Barra Flotante Elevada -->
   <div class="fixed nav-bar-flotante inset-x-5 z-40 max-w-sm mx-auto">
     <nav class="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-3xl px-6 py-2.5 shadow-xl shadow-slate-900/10 flex justify-around items-center">
-      <button onclick="cambiarVistaMovil('facturas')" id="btnNavFacturas" class="flex flex-col items-center text-blue-600 transition">
+      <button onclick="cambiarVistaMovil('facturas')" id="btnNavFacturas" class="flex flex-col items-center text-blue-600 transition cursor-pointer">
         <span class="text-xl">📊</span>
         <span class="text-[10px] font-bold mt-0.5">Facturas</span>
       </button>
       
-      <a href="index.html" class="flex flex-col items-center -mt-8 group">
+      <a href="index.html" class="flex flex-col items-center -mt-8 group cursor-pointer">
         <div class="w-14 h-14 rounded-full bg-blue-600 active:bg-blue-700 text-white flex items-center justify-center text-2xl shadow-lg shadow-blue-500/40 border-4 border-slate-100 active:scale-95 transition">
           📷
         </div>
         <span class="text-[10px] font-bold text-slate-700 mt-1">Escanear</span>
       </a>
 
-      <button onclick="cambiarVistaMovil('catalogo')" id="btnNavCatalogo" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition">
+      <button onclick="cambiarVistaMovil('catalogo')" id="btnNavCatalogo" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition cursor-pointer">
         <span class="text-xl">📦</span>
         <span class="text-[10px] font-bold mt-0.5">Catálogo</span>
       </button>
@@ -287,14 +288,14 @@
       if (vista === "catalogo") {
         secFac.classList.add("hidden");
         secCat.classList.remove("hidden");
-        btnCat.className = "flex flex-col items-center text-blue-600 transition";
-        btnFac.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition";
+        btnCat.className = "flex flex-col items-center text-blue-600 transition cursor-pointer";
+        btnFac.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition cursor-pointer";
         cargarCatalogoPrecios();
       } else {
         secCat.classList.add("hidden");
         secFac.classList.remove("hidden");
-        btnFac.className = "flex flex-col items-center text-blue-600 transition";
-        btnCat.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition";
+        btnFac.className = "flex flex-col items-center text-blue-600 transition cursor-pointer";
+        btnCat.className = "flex flex-col items-center text-slate-400 active:text-slate-600 transition cursor-pointer";
       }
     }
 
@@ -338,7 +339,6 @@
       errBox.classList.add("hidden");
 
       try {
-        // Conteo real por factura mediante subconsulta blindada en Neon
         const sql = `
           SELECT 
             f.id, 
@@ -497,6 +497,7 @@
       }
     }
 
+    // Modal de Detalle con visualización de Caducidad (EXP)
     async function abrirModalDetalle(facturaId) {
       const factura = listadoFacturasGlobal.find(f => f.id === facturaId);
       if (!factura) return;
@@ -518,7 +519,8 @@
             cantidad, 
             precio_unitario,
             COALESCE(porcentaje_descuento, 0) as porcentaje_descuento,
-            COALESCE(precio_total, cantidad * precio_unitario) as subtotal
+            COALESCE(precio_total, cantidad * precio_unitario) as subtotal,
+            fecha_caducidad
           FROM detalles_factura
           WHERE factura_id = $1
           ORDER BY id ASC;
@@ -531,20 +533,38 @@
           return;
         }
 
+        const hoy = new Date().toISOString().slice(0, 10);
+
         items.forEach(it => {
           const pu = parseFloat(it.precio_unitario || 0);
           const sub = parseFloat(it.subtotal || 0);
           const dcto = parseFloat(it.porcentaje_descuento || 0);
+
+          let badgeCaducidad = "";
+          if (it.fecha_caducidad) {
+            const fCad = String(it.fecha_caducidad).slice(0, 10);
+            const diffDias = Math.ceil((new Date(fCad) - new Date(hoy)) / (1000 * 60 * 60 * 24));
+
+            if (diffDias < 0) {
+              badgeCaducidad = `<span class="px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold text-[9px] border border-rose-200">⚠️ VENCIDO (${fCad})</span>`;
+            } else if (diffDias <= 90) {
+              badgeCaducidad = `<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-[9px] border border-amber-200">⏳ Vence en ${diffDias} días (${fCad})</span>`;
+            } else {
+              badgeCaducidad = `<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[9px] border border-emerald-200">✓ Vence: ${fCad}</span>`;
+            }
+          }
+
           lista.innerHTML += `
-            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1">
+            <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1.5">
               <div class="flex justify-between items-start gap-2">
-                <span class="font-bold text-slate-900 text-xs">${it.descripcion}</span>
-                <span class="font-black text-slate-900 text-xs">$${sub.toFixed(2)}</span>
+                <span class="font-bold text-slate-900 text-xs leading-snug">${it.descripcion}</span>
+                <span class="font-black text-slate-900 text-xs font-mono">$${sub.toFixed(2)}</span>
               </div>
               <div class="flex justify-between items-center text-[10px] text-slate-400">
                 <span>Cat: <strong class="text-slate-600">${it.categoria}</strong> ${it.lote && it.lote !== 'N/A' ? '• Lote: ' + it.lote : ''}</span>
                 <span>${it.cantidad} ud(s) x $${pu.toFixed(2)} ${dcto > 0 ? `(-${dcto}%)` : ''}</span>
               </div>
+              ${badgeCaducidad ? `<div class="pt-1 border-t border-slate-200/60 flex items-center justify-between">${badgeCaducidad}</div>` : ''}
             </div>
           `;
         });
@@ -649,10 +669,10 @@
           </div>
 
           <div class="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
-            <button onclick="abrirModalDetalle(${f.id})" class="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
+            <button onclick="abrirModalDetalle(${f.id})" class="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100 cursor-pointer">
               🔍 ${f.items_count} producto(s)
             </button>
-            <span class="text-lg font-black text-slate-900 tracking-tight">$${f.total.toFixed(2)}</span>
+            <span class="text-lg font-black text-slate-900 tracking-tight font-mono">$${f.total.toFixed(2)}</span>
           </div>
 
           <div class="flex justify-between items-center pt-2 border-t border-slate-100">
@@ -665,10 +685,10 @@
             </div>
 
             <div class="flex items-center gap-1.5">
-              <button onclick="abrirModalEditar(${f.id})" class="p-2 bg-amber-50 active:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold border border-amber-200">
+              <button onclick="abrirModalEditar(${f.id})" class="p-2 bg-amber-50 active:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold border border-amber-200 cursor-pointer">
                 ✏️
               </button>
-              <button onclick="eliminarFactura(${f.id})" class="p-2 bg-rose-50 active:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200">
+              <button onclick="eliminarFactura(${f.id})" class="p-2 bg-rose-50 active:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 cursor-pointer">
                 🗑
               </button>
             </div>
@@ -773,7 +793,7 @@
                 </span>
               </div>
             </div>
-            <button onclick="toggleHistorialCat(${idx})" class="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 text-xs font-bold border border-slate-200 flex items-center justify-center">
+            <button onclick="toggleHistorialCat(${idx})" class="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 text-xs font-bold border border-slate-200 flex items-center justify-center cursor-pointer">
               ▼
             </button>
           </div>
@@ -781,15 +801,15 @@
           <div class="grid grid-cols-3 gap-2 text-center pt-1">
             <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-2.5">
               <span class="text-[9px] uppercase tracking-wider font-bold text-emerald-700 block">Mínimo</span>
-              <span class="text-sm font-black text-emerald-800">$${precioMin.toFixed(2)}</span>
+              <span class="text-sm font-black text-emerald-800 font-mono">$${precioMin.toFixed(2)}</span>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5">
               <span class="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Promedio</span>
-              <span class="text-sm font-black text-blue-700">$${precioProm.toFixed(2)}</span>
+              <span class="text-sm font-black text-blue-700 font-mono">$${precioProm.toFixed(2)}</span>
             </div>
             <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5">
               <span class="text-[9px] uppercase tracking-wider font-bold text-slate-400 block">Máximo</span>
-              <span class="text-sm font-black text-slate-800">$${precioMax.toFixed(2)}</span>
+              <span class="text-sm font-black text-slate-800 font-mono">$${precioMax.toFixed(2)}</span>
             </div>
           </div>
 
@@ -805,7 +825,7 @@
                 <div class="flex justify-between items-center text-xs p-2 bg-slate-50 rounded-xl">
                   <div>
                     <span class="font-bold text-slate-800 block">${h.proveedor}</span>
-                    <span class="text-[10px] text-slate-400">${h.fecha} • #${h.factura}</span>                   </div>                   <div class="text-right">                     <span class="font-black text-slate-900">$${parseFloat(h.precio).toFixed(2)}</span>
+                    <span class="text-[10px] text-slate-400">${h.fecha} • #${h.factura}</span>                   </div>                   <div class="text-right">                     <span class="font-black text-slate-900 font-mono">$${parseFloat(h.precio).toFixed(2)}</span>
                     <span class="text-[10px] text-slate-400 block">${h.cantidad} ud(s)${h.descuento > 0 ? `(-${h.descuento}%)` : ''}</span>
                   </div>
                 </div>

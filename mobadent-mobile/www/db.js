@@ -1,204 +1,246 @@
-// mobadent-mobile/www/db.js
+/**
+ * Conector de Base de Datos Mobadent con Control de Acceso por Hardware Inmutable
+ * - Sin peticiones continuas (Zero Battery & Zero Compute waste)
+ * - Interfaz limpia sin menciones técnicas a Neon
+ * - Bloqueo instantáneo ante cualquier intento de consulta no autorizada
+ */
 
-// 1. Ejecutor SQL directo sobre Neon (HTTP Serverless Endpoint)
-async function neonQuery(sql, params = []) {
-  try {
-    const cfg = window.CONFIG || CONFIG;
-    const rawUrl = cfg ? cfg.NEON_DATABASE_URL : null;
-    if (!rawUrl) throw new Error("NEON_DATABASE_URL no encontrada en config.js");
+const STORAGE_DEVICE_KEY = "mobadent_hardware_device_id";
 
-    const match = rawUrl.match(/@([^/]+)\//);
-    if (!match) throw new Error("Formato de URL de Neon inválido.");
-    const host = match[1];
+// 1. Obtener identificador permanente de hardware
+async function obtenerIdDispositivo() {
+  let devId = localStorage.getItem(STORAGE_DEVICE_KEY);
 
-    const endpoint = `https://${host}/sql`;
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Neon-Connection-String": rawUrl
-      },
-      body: JSON.stringify({
-        query: sql,
-        params: params
-      })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Respuesta error Neon:", response.status, errText);
-      throw new Error(`Neon HTTP ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    
-    // Si viene como array directo de objetos
-    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && !Array.isArray(data[0])) {
-      return data;
-    }
-
-    // Si viene en data.rows
-    if (data && data.rows) {
-      if (data.rows.length === 0) return [];
-      if (typeof data.rows[0] === 'object' && !Array.isArray(data.rows[0])) {
-        return data.rows;
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Device) {
+    try {
+      const info = await window.Capacitor.Plugins.Device.getId();
+      if (info && info.identifier) {
+        const hashHardware = info.identifier.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(-8);
+        devId = `MOBA-${hashHardware.slice(0, 4)}-${hashHardware.slice(4, 8)}`;
+        localStorage.setItem(STORAGE_DEVICE_KEY, devId);
+        return devId;
       }
-      // Si rows es matriz y hay fields
-      if (data.fields && Array.isArray(data.fields)) {
-        const fieldNames = data.fields.map(f => (typeof f === 'string' ? f : f.name));
-        return data.rows.map(row => {
-          const obj = {};
-          fieldNames.forEach((name, idx) => {
-            obj[name] = row[idx];
-          });
-          return obj;
-        });
-      }
-      return data.rows;
+    } catch (e) {
+      console.warn("Fallo al leer ID de hardware Capacitor:", e);
     }
-
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error("Error en neonQuery:", error);
-    throw error;
   }
+
+  if (!devId) {
+    const hexAleatorio = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const hexNum = Math.floor(1000 + Math.random() * 9000);
+    devId = `MOBA-${hexAleatorio}-${hexNum}`;
+    localStorage.setItem(STORAGE_DEVICE_KEY, devId);
+  }
+  return devId;
 }
 
-// 2. Comprobador de actualizaciones automáticas desde Neon
-async function verificarActualizacionDisponible() {
+// 2. Parser y Ejecutor Oficial contra el Endpoint HTTP
+async function ejecutarPeticionNeonHttp(rawConnectionString, sql, params = []) {
+  if (!rawConnectionString) {
+    throw new Error("Servidor no configurado.");
+  }
+
+  let connectionString = rawConnectionString.trim();
+  let host = "";
+
   try {
-    const cfg = window.CONFIG || CONFIG;
-    const sql = `
-      SELECT version_codigo, version_nombre, novedades, url_apk, es_obligatoria
-      FROM app_versiones
-      ORDER BY version_codigo DESC
-      LIMIT 1;
-    `;
-    const resultado = await neonQuery(sql);
-    if (!resultado || resultado.length === 0) return null;
-
-    const ultimaVersion = resultado[0];
-    const codigoServidor = parseInt(ultimaVersion.version_codigo);
-    const codigoLocal = parseInt((cfg && cfg.APP_VERSION_CODE) ? cfg.APP_VERSION_CODE : 1);
-
-    if (codigoServidor > codigoLocal) {
-      return ultimaVersion;
+    if (connectionString.startsWith("postgres://") || connectionString.startsWith("postgresql://")) {
+      const urlParsed = new URL(connectionString.replace(/^postgres:\/\//, "postgresql://"));
+      host = urlParsed.host;
+    } else if (connectionString.startsWith("https://")) {
+      const urlParsed = new URL(connectionString);
+      host = urlParsed.host;
+    } else {
+      host = connectionString.split("@")[1]?.split("/")[0] || connectionString;
     }
-    return null;
-  } catch (error) {
-    console.warn("Aviso al comprobar actualización en Neon:", error);
-    return null;
-  }
-}
-
-// 3. Subida directa de comprobantes a Supabase Storage
-async function subirImagenASupabase(file) {
-  try {
-    const cfg = window.CONFIG || CONFIG;
-    const extension = file.name ? file.name.split('.').pop() : 'jpg';
-    const nombreArchivo = `movil_${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-    
-    const res = await fetch(`${cfg.SUPABASE_URL}/storage/v1/object/facturas/${nombreArchivo}`, {
-      method: "POST",
-      headers: {
-        "apikey": cfg.SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${cfg.SUPABASE_ANON_KEY}`,
-        "Content-Type": file.type || "image/jpeg"
-      },
-      body: file
-    });
-
-    if (!res.ok) {
-      console.warn("Aviso en Supabase Storage:", await res.text());
-      return null;
-    }
-
-    return `${cfg.SUPABASE_URL}/storage/v1/object/public/facturas/${nombreArchivo}`;
-  } catch (e) {
-    console.warn("Fallo al subir a Supabase:", e);
-    return null;
-  }
-}
-
-// 4. Conversión a Base64
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64Data = reader.result.split(',')[1];
-      resolve({ data: base64Data, mimeType: file.type || "image/jpeg" });
-    };
-    reader.onerror = error => reject(error);
-  });
-}
-
-// 5. Extracción con Gemini AI
-async function extraerFacturaConGemini(archivos) {
-  const cfg = window.CONFIG || CONFIG;
-  const partes = [];
-
-  for (const f of archivos) {
-    const b64 = await fileToBase64(f);
-    partes.push({
-      inline_data: {
-        mime_type: b64.mimeType,
-        data: b64.data
-      }
-    });
+  } catch (err) {
+    throw new Error("Configuración de servidor inválida: " + err.message);
   }
 
-  const prompt = `Analiza estas hojas de factura dental. Consolida todos los items secuencialmente.
-Categorías válidas: 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', 'Periodoncia & Profilaxis', 'Impresión & Modelos', 'Prótesis & Laboratorio', 'Instrumental & Fresas', 'Bioseguridad & Esterilización', 'Equipos & Repuestos', 'Gasto Operativo' o 'General'.
-Devuelve ÚNICAMENTE un JSON con esta estructura exacta:
-{
-  "proveedor_nombre": "string",
-  "proveedor_id_fiscal": "string",
-  "numero_factura": "string",
-  "fecha_emision": "YYYY-MM-DD",
-  "numero_autorizacion": "string o null",
-  "base_iva_0": 0.0,
-  "base_iva_grabada": 0.0,
-  "subtotal": 0.0,
-  "descuento_total": 0.0,
-  "impuestos": 0.0,
-  "total": 0.0,
-  "items": [
-    {
-      "descripcion": "string",
-      "categoria": "string",
-      "lote": "string o N/A",
-      "cantidad": 1.0,
-      "precio_unitario": 0.0,
-      "porcentaje_descuento": 0.0,
-      "subtotal": 0.0
-    }
-  ]
-}`;
+  const endpoint = `https://${host}/sql`;
 
-  partes.push({ text: prompt });
+  const headers = {
+    "Content-Type": "application/json",
+    "Neon-Connection-String": connectionString
+  };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cfg.GEMINI_API_KEY}`;
-
-  const res = await fetch(url, {
+  const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: partes }],
-      generationConfig: {
-        response_mime_type: "application/json",
-        temperature: 0.1
-      }
-    })
+    headers: headers,
+    body: JSON.stringify({ query: sql, params: params })
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini Error: ${err}`);
+    const errorText = await res.text();
+    throw new Error(`Error en servidor (${res.status}): ${errorText}`);
   }
 
-  const jsonResp = await res.json();
-  const rawText = jsonResp.candidates[0].content.parts[0].text;
-  return JSON.parse(rawText);
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  if (data.rows && Array.isArray(data.rows)) return data.rows;
+  if (data.records && Array.isArray(data.records)) return data.records;
+  return data;
 }
+
+// 3. Crear o mostrar el overlay de bloqueo de hardware (Diseño limpio y profesional)
+function mostrarBloqueoTerminal(devId) {
+  let overlay = document.getElementById("pantallaTerminalBloqueado");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "pantallaTerminalBloqueado";
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 10000000;
+      background: #020b12; color: white; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transition: opacity 0.3s ease;
+    `;
+
+    overlay.innerHTML = `
+      <div style="width: 72px; height: 72px; border-radius: 24px; background: rgba(239, 68, 68, 0.15); border: 1.5px solid rgba(239, 68, 68, 0.4); display: flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 24px; box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);">
+        🔒
+      </div>
+      <h2 style="font-size: 22px; font-weight: 900; margin: 0 0 8px 0; letter-spacing: -0.5px;">Acceso No Autorizado</h2>
+      <p style="font-size: 13px; color: #94a3b8; max-width: 290px; line-height: 1.5; margin: 0 0 20px 0;">
+        Este dispositivo no cuenta con permisos activos para consultar la información de la clínica.
+      </p>
+      
+      <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); padding: 14px 24px; border-radius: 16px; margin-bottom: 16px; width: 100%; max-width: 290px; box-sizing: border-box;">
+        <span style="font-size: 10px; color: #38bdf8; display: block; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px;">IDENTIFICADOR DE TERMINAL:</span>
+        <span id="txtDevIdTerminal" style="font-size: 19px; font-weight: 900; letter-spacing: 2px; font-family: monospace; color: #ffffff;">${devId}</span>
+      </div>
+
+      <div id="alertaEstadoAprobacion" style="display: none; font-size: 12px; font-weight: bold; margin-bottom: 16px; max-width: 290px; padding: 10px 14px; border-radius: 12px; line-height: 1.4;"></div>
+
+      <p style="font-size: 11px; color: #64748b; margin: 0 0 24px 0; max-width: 260px;">
+        Comunícate con la administración de la clínica para activar este terminal.
+      </p>
+
+      <button id="btnVerificarTerminalEnVivo" onclick="window.verificarAprobacionEnVivo()" style="background: #0284c7; color: white; border: none; padding: 12px 28px; border-radius: 14px; font-size: 13px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4); transition: all 0.2s;">
+        Comprobar Estado
+      </button>
+    `;
+
+    document.documentElement.appendChild(overlay);
+  }
+  
+  const txtDev = document.getElementById("txtDevIdTerminal");
+  if (txtDev) txtDev.innerText = devId;
+
+  overlay.style.display = "flex";
+  overlay.style.opacity = "1";
+}
+
+// 4. Ocultar pantalla de bloqueo
+function ocultarBloqueoTerminal() {
+  const overlay = document.getElementById("pantallaTerminalBloqueado");
+  if (overlay) {
+    overlay.style.opacity = "0";
+    setTimeout(() => {
+      overlay.style.display = "none";
+    }, 250);
+  }
+}
+
+// 5. Botón interactivo: comprueba el permiso en vivo sin recargar la página
+window.verificarAprobacionEnVivo = async function() {
+  const btn = document.getElementById("btnVerificarTerminalEnVivo");
+  const alerta = document.getElementById("alertaEstadoAprobacion");
+  
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Verificando...";
+    btn.style.opacity = "0.7";
+  }
+
+  const { aprobado, error } = await validarAutorizacionHardware(true);
+
+  if (aprobado) {
+    if (alerta) {
+      alerta.style.display = "block";
+      alerta.style.background = "rgba(16, 185, 129, 0.2)";
+      alerta.style.border = "1px solid #10b981";
+      alerta.style.color = "#34d399";
+      alerta.innerText = "✓ Dispositivo Autorizado. Accediendo...";
+    }
+    setTimeout(() => {
+      ocultarBloqueoTerminal();
+    }, 450);
+  } else {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "Comprobar Estado";
+      btn.style.opacity = "1";
+    }
+    if (alerta) {
+      alerta.style.display = "block";
+      alerta.style.background = "rgba(239, 68, 68, 0.2)";
+      alerta.style.border = "1px solid #ef4444";
+      alerta.style.color = "#f87171";
+      alerta.innerHTML = error 
+        ? `⚠️ Error de comunicación con el servidor.` 
+        : `⚠️ Este terminal aún no ha sido autorizado por la administración.`;
+    }
+  }
+};
+
+// 6. Validación de Hardware Robusta (Tolerante a espacios y mayúsculas)
+async function validarAutorizacionHardware(esManual = false) {
+  const devId = await obtenerIdDispositivo();
+  const devIdLimpio = devId.trim();
+  const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
+
+  if (!cfg || !cfg.NEON_DATABASE_URL) {
+    if (!esManual) mostrarBloqueoTerminal(devIdLimpio);
+    return { aprobado: false, error: "Servidor no configurado" };
+  }
+
+  try {
+    const sqlCheck = "SELECT autorizado FROM dispositivos_autorizados WHERE LOWER(TRIM(device_id)) = LOWER($1) LIMIT 1;";
+    const res = await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, sqlCheck, [devIdLimpio]);
+
+    // Si fue eliminado o nunca existió, se auto-registra como pendiente
+    if (!res || res.length === 0) {
+      const sqlInsert = "INSERT INTO dispositivos_autorizados (device_id, alias, autorizado) VALUES ($1, 'Teléfono Android', FALSE) ON CONFLICT (device_id) DO NOTHING;";
+      await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, sqlInsert, [devIdLimpio]).catch(() => {});
+      mostrarBloqueoTerminal(devIdLimpio);
+      return { aprobado: false, error: null };
+    }
+
+    const estaAutorizado = (res[0].autorizado === true || res[0].autorizado === "t" || res[0].autorizado === 1 || res[0].autorizado === "true");
+
+    if (estaAutorizado) {
+      ocultarBloqueoTerminal();
+      return { aprobado: true, error: null };
+    } else {
+      mostrarBloqueoTerminal(devIdLimpio);
+      return { aprobado: false, error: null };
+    }
+
+  } catch (error) {
+    console.error("Error al validar hardware:", error);
+    if (!esManual) mostrarBloqueoTerminal(devIdLimpio);
+    return { aprobado: false, error: error.message };
+  }
+}
+
+// 7. Envoltorio de consultas
+// Cada vez que la app pide facturas, guarda o lee el catálogo, valida el hardware.
+// Si eliminaste o desactivaste el dispositivo, la consulta se corta al instante y bloquea la pantalla.
+async function neonQuery(query, params = []) {
+  const { aprobado } = await validarAutorizacionHardware();
+  if (!aprobado) {
+    throw new Error("Acceso denegado: terminal bloqueado.");
+  }
+
+  const cfg = window.CONFIG || CONFIG;
+  return await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, query, params);
+}
+
+// Inicialización limpia al abrir la vista
+window.addEventListener("DOMContentLoaded", () => {
+  validarAutorizacionHardware();
+});
+
+window.neonQuery = neonQuery;
+window.obtenerIdDispositivo = obtenerIdDispositivo;

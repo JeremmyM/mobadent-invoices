@@ -3,215 +3,210 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mobadent - Registro y Escaneo de Facturas</title>
+  <title>Mobadent Invoices - Registro y Escaneo</title>
   <link rel="icon" type="image/x-icon" href="/frontend/app.ico">
   <link rel="shortcut icon" href="/frontend/app.ico">
-  <link rel="manifest" href="/frontend/manifest.json">
-  <meta name="theme-color" content="#1d4ed8">
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen">
-  <div class="max-w-5xl mx-auto p-4 md:p-6">
+<body class="bg-slate-100 text-slate-800 min-h-screen py-8 px-4 sm:px-6 lg:px-8">
+  
+  <datalist id="listaSugerenciasInsumos"></datalist>
+
+  <div class="max-w-6xl mx-auto space-y-6">
     
     <!-- Encabezado -->
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3 border-b pb-4">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 gap-4">
       <div>
-        <h1 class="text-2xl font-black text-blue-700">Mobadent Invoices</h1>
-        <p class="text-xs text-slate-500">Módulo de captura inteligente y registro de compras (soporta múltiples hojas)</p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-black text-slate-900 tracking-tight">Mobadent Invoices</h1>
+          <span id="badgeVersionInstaladaIndex" class="bg-blue-100 text-blue-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">
+            v1.4.0
+          </span>
+        </div>
+        <p class="text-xs text-slate-500">Registro, escaneo multi-hoja, descuentos y control de caducidades</p>
       </div>
-      <a href="dashboard.html" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded-lg text-xs shadow transition flex items-center gap-1.5">
-        📊 Ir al Dashboard
-      </a>
+      <div>
+        <a href="dashboard.html" class="inline-flex items-center gap-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition">
+          📊 Ir al Dashboard
+        </a>
+      </div>
     </div>
 
-    <!-- Pestañas de Modo -->
-    <div class="flex border-b border-slate-200 mb-6 gap-3 text-xs font-bold">
-      <button id="tabBtnIA" onclick="cambiarModo('ia')" class="pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5">
-        Escanear (Foto / PDF de 1 o más hojas)
-      </button>
-      <button id="tabBtnManual" onclick="cambiarModo('manual')" class="pb-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-1.5">
-        ✍ Ingreso Manual Directo (Sin IA)
-      </button>
+    <!-- BANNER DE ALERTA: FACTURA DUPLICADA -->
+    <div id="alertaDuplicado" class="hidden bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 transition-all shadow-sm">
+      <div class="flex items-start gap-3">
+        <span class="text-3xl">⚠️</span>
+        <div class="flex-1">
+          <h4 class="text-sm font-black text-amber-900 uppercase tracking-wider">¡Atención! Factura ya registrada previamente</h4>
+          <p class="text-xs text-amber-800 mt-1 font-medium" id="mensajeAlertaDuplicado">
+            Ya existe un comprobante con este número en el sistema.
+          </p>
+          <span class="inline-block mt-2 text-[11px] font-bold bg-amber-200/60 text-amber-900 px-2.5 py-1 rounded-lg">
+            Si continúas y guardas, se actualizarán los datos de la factura anterior.
+          </span>
+        </div>
+        <button type="button" onclick="document.getElementById('alertaDuplicado').classList.add('hidden')" class="text-amber-600 hover:text-amber-900 font-bold text-lg cursor-pointer">
+          &times;
+        </button>
+      </div>
     </div>
 
-    <!-- MODO 1: ZONA DE CARGA CON IA -->
-    <div id="seccionCargaIA" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
+    <!-- PANEL DE ESCANEO / CAPTURA MULTI-HOJA -->
+    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-sm font-black text-slate-800 uppercase tracking-wider">Escaneo Inteligente (Gemini IA)</h2>
+          <p class="text-xs text-slate-400">Sube una o varias hojas de la factura (imágenes o PDF)</p>
+        </div>
+        <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-lg border border-blue-200">
+          Multi-Página Nativo
+        </span>
+      </div>
+
+      <div id="dropzoneFacturas" class="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50 hover:bg-blue-50/40 transition">
+        <input type="file" id="inputArchivosFactura" accept="image/*,application/pdf" multiple class="hidden">
+        <div class="space-y-1">
+          <div class="text-3xl">📄</div>
+          <p class="text-xs font-bold text-slate-700">Arrastra aquí los archivos o haz clic para seleccionar</p>
+          <p class="text-[11px] text-slate-400">Soporta JPG, PNG, WEBP o PDF</p>
+        </div>
+      </div>
+
+      <div id="contenedorHojasSubidas" class="hidden flex flex-wrap gap-2.5 pt-2"></div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" id="btnAnalizarIA" class="hidden bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition flex items-center gap-1.5 cursor-pointer">
+          ✨ Extraer Datos con IA
+        </button>
+      </div>
+
+      <div id="spinnerIA" class="hidden py-4 text-center space-y-2">
+        <div class="inline-block animate-spin rounded-full h-7 w-7 border-3 border-blue-600 border-t-transparent"></div>
+        <p class="text-xs font-bold text-blue-700">Gemini está digitalizando comprobantes, descuentos y caducidades...</p>
+      </div>
+    </div>
+
+    <!-- FORMULARIO DE DETALLES Y GUARDADO -->
+    <form id="formFactura" class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-6">
       
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <label class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-50 rounded-xl cursor-pointer transition text-center group">
-          <span class="text-3xl mb-1 group-hover:scale-110 transition-transform">📸</span>
-          <span class="font-bold text-sm text-blue-700">Tomar Foto con Cámara</span>
-          <span class="text-[11px] text-slate-500">Puedes tomar una o varias fotos consecutivas</span>
-          <input type="file" id="inputCamara" accept="image/*" capture="environment" class="hidden">
-        </label>
-
-        <label class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 bg-slate-50/50 hover:bg-slate-50 rounded-xl cursor-pointer transition text-center group">
-          <span class="text-3xl mb-1 group-hover:scale-110 transition-transform">📁</span>
-          <span class="font-bold text-sm text-slate-700">Subir PDF o Imágenes</span>
-          <span class="text-[11px] text-slate-500">Selecciona varias hojas a la vez (Ctrl + Clic)</span>
-          <input type="file" id="inputArchivo" accept="image/*,application/pdf" multiple class="hidden">
-        </label>
+      <div>
+        <h2 class="text-sm font-black text-slate-800 uppercase tracking-wider mb-4">Datos del Comprobante</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">Proveedor:</label>
+            <input type="text" id="txtProveedor" required placeholder="Nombre del Proveedor" class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">RUC / Cédula:</label>
+            <input type="text" id="txtRuc" placeholder="Identificación Fiscal" class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">N° de Factura:</label>
+            <input type="text" id="txtNumFactura" required placeholder="001-001-000000001" class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">Fecha de Emisión:</label>
+            <input type="date" id="txtFechaEmision" required class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block font-semibold text-slate-600 mb-1">N° de Autorización (SRI):</label>
+            <input type="text" id="txtAutorizacion" placeholder="Clave de 49 dígitos (opcional)" class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 mb-1">Estado de Pago:</label>
+            <select id="txtEstadoPago" class="w-full border rounded-xl p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-bold text-slate-700">
+              <option value="Pendiente">⏳ Pendiente</option>
+              <option value="Pagado">✓ Pagado</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-amber-800 mb-1">Descuento Global Factura ($):</label>
+            <input type="number" step="0.01" id="txtDescuentoGlobal" value="0.00" oninput="recalcularTotales()" placeholder="0.00" class="w-full border border-amber-300 rounded-xl p-2.5 bg-amber-50/50 font-mono font-bold text-amber-800 focus:bg-white focus:ring-2 focus:ring-amber-500">
+          </div>
+        </div>
       </div>
 
-      <!-- Previsualización Multi-hoja -->
-      <div id="contenedorPreview" class="hidden border-t pt-4 mt-4">
+      <!-- ÍTEMS / LÍNEAS DE PRODUCTOS CON LOTE Y CADUCIDAD OBLIGATORIOS -->
+      <div>
         <div class="flex justify-between items-center mb-3">
-          <span class="text-xs font-bold text-slate-700 uppercase" id="contadorHojasTxt">Hojas seleccionadas</span>
-          <button id="btnQuitarArchivos" type="button" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded text-xs font-semibold cursor-pointer">
-            ✕ Quitar todo
+          <div>
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-wider">Insumos y Gastos Detallados</h3>
+            <p class="text-[11px] text-slate-400">Calculado en vivo: (Cant × Precio) - Dcto = Subtotal</p>
+          </div>
+          <button type="button" onclick="agregarLineaProducto()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl border border-slate-200 transition cursor-pointer">
+            + Añadir Fila
           </button>
         </div>
 
-        <div id="galeriaHojasPreview" class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-72 overflow-y-auto p-2 bg-slate-50 rounded-xl border"></div>
-
-        <button id="btnProcesarIA" class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition cursor-pointer text-sm flex items-center justify-center gap-2">
-          <span>Extraer Datos de la(s) Hoja(s)</span>
-        </button>
+        <div class="overflow-x-auto border border-slate-200 rounded-2xl">
+          <table class="w-full text-left text-xs" id="tablaLineas">
+            <thead class="bg-slate-50 border-b text-slate-500 uppercase font-semibold">
+              <tr>
+                <th class="p-2.5">Descripción del Insumo</th>
+                <th class="p-2.5 w-36">Categoría</th>
+                <th class="p-2.5 w-24">Lote</th>
+                <th class="p-2.5 w-36 text-rose-600 font-bold">⏳ Caducidad (EXP)</th>
+                <th class="p-2.5 w-16 text-center">Cant.</th>
+                <th class="p-2.5 w-20 text-right">P. Unit.</th>
+                <th class="p-2.5 w-16 text-center text-amber-700">% Dcto</th>
+                <th class="p-2.5 w-24 text-right">Subtotal</th>
+                <th class="p-2.5 w-10 text-center"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
       </div>
 
-      <!-- Barra de progreso -->
-      <div id="stepperCargando" class="hidden border-t pt-5 mt-4 space-y-2">
-        <div class="flex items-center gap-3">
-          <div class="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-xs font-bold text-slate-700" id="txtPasoActual">Consolidando páginas...</span>
+      <!-- TOTALES Y AUDITORÍA MATEMÁTICA FISCAL -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        <div>
+          <label class="block font-semibold text-slate-600 text-xs mb-1">Nota o Comentario de Auditoría:</label>
+          <textarea id="txtComentario" rows="4" placeholder="Ej: Pago con transferencia, descuento por pronto pago..." class="w-full border rounded-xl p-2.5 text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"></textarea>
         </div>
-        <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-          <div id="barraProgreso" class="bg-blue-600 h-full w-1/4 transition-all duration-500"></div>
-        </div>
-      </div>
-    </div>
 
-    <!-- MODO 2: FORMULARIO DE VERIFICACIÓN -->
-    <div id="seccionVerificacion" class="hidden bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
-      
-      <!-- BANNER DE ADVERTENCIA: FACTURA DUPLICADA -->
-      <div id="alertaFacturaDuplicada" class="hidden mb-5 p-3.5 bg-amber-50 border-l-4 border-amber-500 rounded-r-xl shadow-xs transition-all">
-        <div class="flex items-start gap-3">
-          <span class="text-xl">⚠️</span>
-          <div class="text-xs flex-1">
-            <h4 class="font-bold text-amber-900 text-sm">¡Atención! Factura ya registrada previamente</h4>
-            <p class="text-amber-700 mt-0.5" id="mensajeDetalleDuplicado">
-              Este número de comprobante ya se encuentra archivado en el sistema.
-            </p>
-            <span class="text-[11px] text-amber-600 mt-1 block">
-              Si continúas y confirmas el guardado, se actualizarán los datos de la factura existente en lugar de crear una nueva.
-            </span>
+        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
+          <div class="flex justify-between text-slate-600">
+            <span>Subtotal Bruto:</span>
+            <span id="lblSubtotalCalc" class="font-semibold font-mono">$0.00</span>
+          </div>
+          <div class="flex justify-between text-amber-700 font-semibold">
+            <span>Descuento en Ítems:</span>
+            <span id="lblDescuentoItemsCalc" class="font-mono">-$0.00</span>
+          </div>
+          <div class="flex justify-between text-amber-800 font-bold">
+            <span>Descuento Global Aplicado:</span>
+            <span id="lblDescuentoGlobalCalc" class="font-mono">-$0.00</span>
+          </div>
+          <div class="flex justify-between text-slate-800 font-semibold border-t border-slate-200/80 pt-1">
+            <span>Base Imponible Gravada (IVA):</span>
+            <span id="lblBaseIvaCalc" class="font-mono font-bold">$0.00</span>
+          </div>
+          <div class="flex justify-between text-slate-600">
+            <span>IVA Liquidado (15%):</span>
+            <span id="lblIvaCalc" class="font-semibold font-mono">$0.00</span>
+          </div>
+          <div class="flex justify-between text-base font-black text-slate-900 border-t border-slate-200 pt-2">
+            <span>Total Factura Cuadrado:</span>
+            <span id="lblTotalCalc" class="text-blue-700 font-mono font-bold text-lg">$0.00</span>
+          </div>
+          <div id="cajaValidacionMatematica" class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 p-2 rounded-xl mt-1 text-center">
+            ✓ Matemática verificada y cuadrando al 100%
           </div>
         </div>
       </div>
 
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 pb-3 border-b">
-        <div>
-          <h2 class="text-base font-bold text-slate-800" id="tituloFormulario">Verificación de Datos</h2>
-          <p class="text-xs text-slate-400">Revisa los insumos y sus categorías antes de archivar</p>
-        </div>
-        <div id="badgeValidacionAritmetica" class="px-2.5 py-1 rounded-full text-xs font-bold"></div>
-      </div>
-
-      <!-- Encabezado de Factura -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-xs">
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">Razón Social Proveedor:</label>
-          <input type="text" id="campoProveedor" class="w-full border rounded-lg p-2 font-medium focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">RUC / ID Fiscal:</label>
-          <input type="text" id="campoRuc" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 font-mono">
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">N° de Factura:</label>
-          <div class="relative">
-            <input type="text" id="campoNumeroFactura" class="w-full border rounded-lg p-2 font-bold text-slate-900 focus:ring-2 focus:ring-blue-500">
-            <span id="iconoEstadoDuplicado" class="hidden absolute right-2.5 top-2 text-xs font-bold"></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 text-xs">
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">Fecha de Emisión:</label>
-          <input type="date" id="campoFecha" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">N° Autorización SRI / Fiscal:</label>
-          <input type="text" id="campoAutorizacion" placeholder="Opcional" class="w-full border rounded-lg p-2 text-slate-500 font-mono">
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 text-xs">
-        <div>
-          <label class="block font-semibold text-slate-600 mb-1">Estado de Pago:</label>
-          <select id="campoEstadoPago" class="w-full border rounded-lg p-2 font-medium bg-white focus:ring-2 focus:ring-blue-500">
-            <option value="Pendiente">⏳ Pendiente</option>
-            <option value="Pagado">✓ Pagado</option>
-          </select>
-        </div>
-        <div class="sm:col-span-2">
-          <label class="block font-semibold text-slate-600 mb-1">Nota / Comentario de Factura:</label>
-          <input type="text" id="campoComentario" placeholder="Ej: Factura de 2 hojas / Envío por Servientrega" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-500">
-        </div>
-      </div>
-
-      <!-- Tabla de Insumos y Gastos -->
-      <div class="flex justify-between items-center mb-2">
-        <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Detalle Consolidado de Líneas</span>
-        <button onclick="agregarLineaManual()" type="button" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200 cursor-pointer">
-          + Agregar Línea
-        </button>
-      </div>
-
-      <div class="overflow-x-auto border rounded-xl mb-4">
-        <table class="w-full text-left text-xs" id="tablaItemsVerificacion">
-          <thead class="bg-slate-50 border-b text-slate-600">
-            <tr>
-              <th class="p-2.5">Descripción / Concepto</th>
-              <th class="p-2.5 w-48">Categoría Profesional</th>
-              <th class="p-2.5 w-20">Lote</th>
-              <th class="p-2.5 w-16 text-center">Cant.</th>
-              <th class="p-2.5 w-24 text-right">Precio Unit.</th>
-              <th class="p-2.5 w-16 text-center">% Dcto</th>
-              <th class="p-2.5 w-24 text-right">Subtotal</th>
-              <th class="p-2.5 w-8 text-center"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100"></tbody>
-        </table>
-      </div>
-
-      <!-- Datalist global para sugerencias de productos -->
-      <datalist id="listaProductosExistentes"></datalist>
-
-      <!-- Resumen Tributario y Totales -->
-      <div class="bg-slate-50 p-3.5 rounded-xl border mb-5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <div>
-          <span class="text-slate-400 block font-semibold text-[10px] uppercase">Base IVA 0%</span>
-          <input type="number" step="0.01" id="campoBase0" oninput="evaluarCuadreAritmetico()" class="w-full border rounded p-1.5 font-medium mt-0.5 bg-white text-right" value="0.00">
-        </div>
-        <div>
-          <span class="text-slate-400 block font-semibold text-[10px] uppercase">Base Gravada (15%)</span>
-          <input type="number" step="0.01" id="campoBaseGravada" oninput="evaluarCuadreAritmetico()" class="w-full border rounded p-1.5 font-medium mt-0.5 bg-white text-right" value="0.00">
-        </div>
-        <div>
-          <span class="text-slate-400 block font-semibold text-[10px] uppercase">IVA Liquidado</span>
-          <input type="number" step="0.01" id="campoIva" oninput="evaluarCuadreAritmetico()" class="w-full border rounded p-1.5 font-medium mt-0.5 bg-white text-right" value="0.00">
-        </div>
-        <div>
-          <span class="text-slate-700 block font-bold text-[10px] uppercase">Total Neto Consolidado</span>
-          <input type="number" step="0.01" id="campoTotal" oninput="evaluarCuadreAritmetico()" class="w-full border-2 border-emerald-500 rounded p-1.5 font-bold text-slate-900 mt-0.5 bg-white text-right text-sm" value="0.00">
-        </div>
-      </div>
-
-      <!-- Botones de Acción -->
-      <div class="flex justify-end gap-2.5 border-t pt-4">
-        <button onclick="reiniciarEscaneo()" type="button" class="px-4 py-2 border rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
+      <!-- BOTONES DE ACCIÓN -->
+      <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
+        <a href="dashboard.html" class="px-5 py-2.5 border rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition">
           Cancelar
-        </button>
-        <button id="btnGuardarDefinitivo" type="button" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5">
-          ✓ Confirmar y Guardar en Sistema
+        </a>
+        <button type="submit" id="btnGuardarFactura" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-blue-500/30 transition cursor-pointer">
+          💾 Registrar Factura
         </button>
       </div>
 
-    </div>
+    </form>
 
   </div>
 
@@ -220,479 +215,407 @@
     const API_URL = `http://${hostActual}:8000/api`;
 
     const CATEGORIAS_SISTEMA = [
-      "General",
-      "Restauración & Estética",
-      "Endodoncia",
-      "Ortodoncia",
-      "Periodoncia & Profilaxis",
-      "Impresión & Modelos",
-      "Prótesis & Laboratorio",
-      "Instrumental & Fresas",
-      "Bioseguridad & Esterilización",
-      "Equipos & Repuestos",
-      "Gasto Operativo"
+      "General", "Restauración & Estética", "Endodoncia", "Ortodoncia",
+      "Periodoncia & Profilaxis", "Impresión & Modelos", "Prótesis & Laboratorio",
+      "Instrumental & Fresas", "Bioseguridad & Esterilización", "Equipos & Repuestos", "Gasto Operativo"
     ];
 
-    let listaArchivos = [];
-    let urlArchivosSubidos = null;
-    let modoIngreso = "ia";
-    let timerVerificacionDuplicado = null;
-    let mapaSugerenciasCat = {};
+    let archivosSeleccionados = [];
+    let urlsComprobanteNube = null;
 
-    const inputCamara = document.getElementById("inputCamara");
-    const inputArchivo = document.getElementById("inputArchivo");
-    const contenedorPreview = document.getElementById("contenedorPreview");
-    const galeriaPreview = document.getElementById("galeriaHojasPreview");
-    const contadorHojasTxt = document.getElementById("contadorHojasTxt");
-
-    function cambiarModo(modo) {
-      modoIngreso = modo;
-      const tabIA = document.getElementById("tabBtnIA");
-      const tabManual = document.getElementById("tabBtnManual");
-      const seccionIA = document.getElementById("seccionCargaIA");
-      const seccionForm = document.getElementById("seccionVerificacion");
-
-      if (modo === "manual") {
-        tabManual.className = "pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5";
-        tabIA.className = "pb-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-1.5";
-        seccionIA.classList.add("hidden");
-        seccionForm.classList.remove("hidden");
-        const tbody = document.querySelector("#tablaItemsVerificacion tbody");
-        if (tbody.children.length === 0) {
-          agregarFilaVerificacion("", "General", "", 1, 0.0, 0.0, 0.0);
+    async function cargarVersionInstalada() {
+      try {
+        const res = await fetch(`${API_URL}/sistema/info`);
+        if (!res.ok) return;
+        const info = await res.json();
+        if (info && info.version_nombre) {
+          const badge = document.getElementById("badgeVersionInstaladaIndex");
+          if (badge) badge.innerText = `v${info.version_nombre}`;
+          document.title = `Mobadent Invoices v${info.version_nombre} - Registro y Escaneo`;
         }
-      } else {
-        tabIA.className = "pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5";
-        tabManual.className = "pb-2.5 border-b-2 border-transparent text-slate-500 hover:text-slate-800 cursor-pointer flex items-center gap-1.5";
-        seccionIA.classList.remove("hidden");
-        seccionForm.classList.add("hidden");
+      } catch (e) {
+        console.warn("No se pudo obtener versión local:", e);
       }
     }
 
-    inputCamara.addEventListener("change", (e) => {
-      if (e.target.files[0]) {
-        listaArchivos.push(e.target.files[0]);
-        actualizarGaleriaPreview();
-      }
+    const dropzone = document.getElementById("dropzoneFacturas");
+    const inputArchivos = document.getElementById("inputArchivosFactura");
+
+    dropzone.addEventListener("click", () => inputArchivos.click());
+    dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("border-blue-500", "bg-blue-50/50"); });
+    dropzone.addEventListener("dragleave", () => { dropzone.classList.remove("border-blue-500", "bg-blue-50/50"); });
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("border-blue-500", "bg-blue-50/50");
+      if (e.dataTransfer.files) agregarArchivos(e.dataTransfer.files);
     });
 
-    inputArchivo.addEventListener("change", (e) => {
-      if (e.target.files.length > 0) {
-        for (let i = 0; i < e.target.files.length; i++) {
-          listaArchivos.push(e.target.files[i]);
-        }
-        actualizarGaleriaPreview();
-      }
+    inputArchivos.addEventListener("change", (e) => {
+      if (e.target.files) agregarArchivos(e.target.files);
     });
 
-    function actualizarGaleriaPreview() {
-      if (listaArchivos.length === 0) {
-        contenedorPreview.classList.add("hidden");
+    function agregarArchivos(files) {
+      for (let i = 0; i < files.length; i++) {
+        archivosSeleccionados.push(files[i]);
+      }
+      actualizarVistaHojas();
+    }
+
+    function actualizarVistaHojas() {
+      const cont = document.getElementById("contenedorHojasSubidas");
+      const btnIA = document.getElementById("btnAnalizarIA");
+      cont.innerHTML = "";
+
+      if (archivosSeleccionados.length === 0) {
+        cont.classList.add("hidden");
+        btnIA.classList.add("hidden");
         return;
       }
-      galeriaPreview.innerHTML = "";
-      contadorHojasTxt.innerText = `${listaArchivos.length} hoja(s) de la factura lista(s) para extraer`;
 
-      listaArchivos.forEach((file, idx) => {
-        const div = document.createElement("div");
-        div.className = "relative border rounded-lg bg-white p-1 text-center shadow-xs";
-        
-        if (file.type.includes("pdf")) {
-          div.innerHTML = `
-            <div class="h-24 flex flex-col items-center justify-center text-slate-500 text-xs font-semibold">
-              <span class="text-2xl">📄</span>
-              <span class="truncate max-w-[100px] text-[10px] mt-1">${file.name}</span>
-            </div>
-          `;
-        } else {
-          const img = document.createElement("img");
-          img.className = "h-24 w-full object-cover rounded";
-          img.src = URL.createObjectURL(file);
-          div.appendChild(img);
-        }
+      cont.classList.remove("hidden");
+      btnIA.classList.remove("hidden");
 
-        const btnQuitar = document.createElement("button");
-        btnQuitar.className = "absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center font-bold cursor-pointer shadow";
-        btnQuitar.innerHTML = "&times;";
-        btnQuitar.onclick = () => {
-          listaArchivos.splice(idx, 1);
-          actualizarGaleriaPreview();
-        };
-        div.appendChild(btnQuitar);
-
-        const lbl = document.createElement("span");
-        lbl.className = "text-[10px] font-bold text-slate-500 block mt-1";
-        lbl.innerText = `Hoja ${idx + 1}`;
-        div.appendChild(lbl);
-
-        galeriaPreview.appendChild(div);
+      archivosSeleccionados.forEach((f, idx) => {
+        const esPdf = f.name.toLowerCase().endsWith(".pdf");
+        const chip = document.createElement("div");
+        chip.className = "flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-xl text-xs font-medium text-slate-700";
+        chip.innerHTML = `
+          <span>${esPdf ? '📕' : '🖼️'} Hoja ${idx + 1}: ${f.name.slice(0, 18)}</span>
+          <button type="button" onclick="quitarArchivo(${idx})" class="text-rose-500 hover:text-rose-700 font-bold ml-1 cursor-pointer">&times;</button>
+        `;
+        cont.appendChild(chip);
       });
-
-      contenedorPreview.classList.remove("hidden");
     }
 
-    document.getElementById("btnQuitarArchivos").addEventListener("click", () => {
-      listaArchivos = [];
-      actualizarGaleriaPreview();
-    });
+    function quitarArchivo(idx) {
+      archivosSeleccionados.splice(idx, 1);
+      actualizarVistaHojas();
+    }
 
-    document.getElementById("btnProcesarIA").addEventListener("click", async () => {
-      if (listaArchivos.length === 0) return;
+    // EXTRACCIÓN CON IA: Captura de fecha_caducidad y lote
+    document.getElementById("btnAnalizarIA").addEventListener("click", async () => {
+      if (archivosSeleccionados.length === 0) return;
 
-      const stepper = document.getElementById("stepperCargando");
-      const txtPaso = document.getElementById("txtPasoActual");
-      const barra = document.getElementById("barraProgreso");
-      const btnProcesar = document.getElementById("btnProcesarIA");
+      const formData = new FormData();
+      archivosSeleccionados.forEach(f => formData.append("files", f));
 
-      stepper.classList.remove("hidden");
-      btnProcesar.disabled = true;
-      btnProcesar.classList.add("opacity-50");
+      const spinner = document.getElementById("spinnerIA");
+      const btn = document.getElementById("btnAnalizarIA");
+      spinner.classList.remove("hidden");
+      btn.disabled = true;
 
       try {
-        txtPaso.innerText = `Enviando ${listaArchivos.length} hoja(s) a Gemini...`;
-        barra.style.width = "40%";
-
-        const formData = new FormData();
-        listaArchivos.forEach(f => formData.append("files", f));
-
         const res = await fetch(`${API_URL}/facturas/analizar`, {
           method: "POST",
           body: formData
         });
 
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || "Error en extracción");
+          const err = await res.json();
+          throw new Error(err.detail || "Error analizando comprobante");
         }
-
-        barra.style.width = "85%";
-        txtPaso.innerText = "Consolidando ítems y categorizando...";
-
-        const datos = await res.json();
-        urlArchivosSubidos = datos.url_factura || null;
-
-        setTimeout(() => {
-          stepper.classList.add("hidden");
-          btnProcesar.disabled = false;
-          btnProcesar.classList.remove("opacity-50");
-          document.getElementById("seccionCargaIA").classList.add("hidden");
-          cargarFormularioVerificacion(datos);
-        }, 500);
-
-      } catch (err) {
-        alert("Error de IA: " + err.message);
-        stepper.classList.add("hidden");
-        btnProcesar.disabled = false;
-        btnProcesar.classList.remove("opacity-50");
-      }
-    });
-
-    function cargarFormularioVerificacion(data) {
-      document.getElementById("campoProveedor").value = data.proveedor_nombre || "";
-      document.getElementById("campoRuc").value = data.proveedor_id_fiscal || "";
-      document.getElementById("campoNumeroFactura").value = data.numero_factura || "";
-      document.getElementById("campoFecha").value = data.fecha_emision || "";
-      document.getElementById("campoAutorizacion").value = data.numero_autorizacion || "";
-
-      document.getElementById("campoBase0").value = (data.base_iva_0 || 0).toFixed(2);
-      document.getElementById("campoBaseGravada").value = (data.base_iva_grabada || data.subtotal || 0).toFixed(2);
-      document.getElementById("campoIva").value = (data.impuestos || 0).toFixed(2);
-      document.getElementById("campoTotal").value = (data.total || 0).toFixed(2);
-
-      const tbody = document.querySelector("#tablaItemsVerificacion tbody");
-      tbody.innerHTML = "";
-
-      (data.items || []).forEach(it => {
-        let dcto = parseFloat(it.porcentaje_descuento) || 0;
-        let sub = parseFloat(it.subtotal || it.precio_total) || 0;
-        let cant = parseFloat(it.cantidad) || 1;
-        let pu = parseFloat(it.precio_unitario) || 0;
-        if (sub === 0) sub = cant * pu * (1 - (dcto / 100));
-
-        agregarFilaVerificacion(
-          it.descripcion,
-          it.categoria || "General",
-          it.lote || "N/A",
-          cant,
-          pu,
-          dcto,
-          sub
-        );
-      });
-
-      document.getElementById("seccionVerificacion").classList.remove("hidden");
-      autoCalcularBasesDesdeItems();
-
-      if (data.numero_factura) {
-        ejecutarVerificacionDuplicado();
-      }
-    }
-
-    // ========================================================
-    // DETECCIÓN DE FACTURA REPETIDA EN TIEMPO REAL
-    // ========================================================
-
-    document.getElementById("campoNumeroFactura").addEventListener("input", () => {
-      clearTimeout(timerVerificacionDuplicado);
-      timerVerificacionDuplicado = setTimeout(ejecutarVerificacionDuplicado, 300);
-    });
-
-    document.getElementById("campoRuc").addEventListener("input", () => {
-      clearTimeout(timerVerificacionDuplicado);
-      timerVerificacionDuplicado = setTimeout(ejecutarVerificacionDuplicado, 400);
-    });
-
-    async function ejecutarVerificacionDuplicado() {
-      const num = document.getElementById("campoNumeroFactura").value.trim();
-      const ruc = document.getElementById("campoRuc").value.trim();
-      const prov = document.getElementById("campoProveedor").value.trim();
-      const banner = document.getElementById("alertaFacturaDuplicada");
-      const msg = document.getElementById("mensajeDetalleDuplicado");
-      const icono = document.getElementById("iconoEstadoDuplicado");
-
-      if (num.length < 3) {
-        banner.classList.add("hidden");
-        icono.classList.add("hidden");
-        return;
-      }
-
-      try {
-        const queryParams = new URLSearchParams({
-          numero_factura: num,
-          proveedor_ruc: ruc || "",
-          proveedor_nombre: prov || ""
-        });
-
-        const res = await fetch(`${API_URL}/facturas/verificar-duplicado?${queryParams.toString()}`);
-        if (!res.ok) return;
 
         const data = await res.json();
+        
+        if (data.proveedor_nombre) document.getElementById("txtProveedor").value = data.proveedor_nombre;
+        if (data.proveedor_id_fiscal) document.getElementById("txtRuc").value = data.proveedor_id_fiscal;
+        if (data.numero_factura) document.getElementById("txtNumFactura").value = data.numero_factura;
+        if (data.fecha_emision) document.getElementById("txtFechaEmision").value = String(data.fecha_emision).slice(0, 10);
+        if (data.numero_autorizacion) document.getElementById("txtAutorizacion").value = data.numero_autorizacion;
+        if (data.url_factura) urlsComprobanteNube = data.url_factura;
 
-        if (data.existe) {
-          msg.innerHTML = `La factura <strong>#${data.numero_factura}</strong> de <strong>${data.proveedor}</strong> ya fue registrada (Emisión: ${data.fecha_emision}, Total: $${data.total.toFixed(2)}).`;
-          banner.classList.remove("hidden");
-          icono.className = "absolute right-2.5 top-2 text-xs font-bold text-amber-600";
-          icono.innerText = "⚠️ Repetida";
-          icono.classList.remove("hidden");
+        if (data.descuento_total && parseFloat(data.descuento_total) > 0) {
+          document.getElementById("txtDescuentoGlobal").value = parseFloat(data.descuento_total).toFixed(2);
         } else {
-          banner.classList.add("hidden");
-          icono.className = "absolute right-2.5 top-2 text-xs font-bold text-emerald-600";
-          icono.innerText = "✓ Disponible";
-          icono.classList.remove("hidden");
+          document.getElementById("txtDescuentoGlobal").value = "0.00";
         }
+
+        const tbody = document.querySelector("#tablaLineas tbody");
+        tbody.innerHTML = "";
+
+        if (Array.isArray(data.items) && data.items.length > 0) {
+          data.items.forEach(it => {
+            const caducidadDetectada = it.fecha_caducidad || it.caducidad || it.vencimiento || it.fecha_vencimiento || it.exp_date || "";
+            const loteDetectado = it.lote || "N/A";
+
+            agregarLineaProducto(
+              it.descripcion || "",
+              it.categoria || "General",
+              loteDetectado,
+              it.cantidad || 1,
+              it.precio_unitario || 0,
+              it.porcentaje_descuento || 0,
+              caducidadDetectada
+            );
+          });
+        } else {
+          agregarLineaProducto();
+        }
+
+        recalcularTotales();
+        await verificarFacturaDuplicada();
+
       } catch (err) {
-        console.error("Error al comprobar duplicado:", err);
+        alert("Aviso de extracción: " + err.message);
+      } finally {
+        spinner.classList.add("hidden");
+        btn.disabled = false;
       }
-    }
+    });
 
-    // ========================================================
-    // AUTOCOMPLETADO INTUITIVO CON DATALIST NATIVO
-    // ========================================================
-
-    async function cargarSugerenciasDatalist(texto) {
-      if (!texto || texto.length < 2) return;
-      try {
-        const res = await fetch(`${API_URL}/catalogo/sugerencias?q=${encodeURIComponent(texto)}`);
-        if (!res.ok) return;
-        const sugerencias = await res.json();
-
-        const datalist = document.getElementById("listaProductosExistentes");
-        datalist.innerHTML = "";
-
-        sugerencias.forEach(s => {
-          const opt = document.createElement("option");
-          opt.value = s.descripcion;
-          opt.label = `[${s.categoria}]`;
-          datalist.appendChild(opt);
-          mapaSugerenciasCat[s.descripcion.toLowerCase().trim()] = s.categoria;
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    function alEscribirProducto(input) {
-      const texto = input.value.trim();
-      cargarSugerenciasDatalist(texto);
-
-      // Si coincide exactamente con un producto existente, auto-seleccionar su categoría
-      const catAsociada = mapaSugerenciasCat[texto.toLowerCase()];
-      if (catAsociada) {
-        const row = input.closest("tr");
-        const selectCat = row.querySelector(".item-cat");
-        if (selectCat.querySelector(`option[value="${catAsociada}"]`)) {
-          selectCat.value = catAsociada;
-          cambiarEstiloCategoria(selectCat);
-        }
-      }
-    }
-
-    function agregarFilaVerificacion(desc = "", cat = "General", lote = "", cant = 1, precio = 0.0, dcto = 0.0, subtotal = 0.0) {
-      const tbody = document.querySelector("#tablaItemsVerificacion tbody");
+    // Dibuja la fila con el input tipo DATE obligatorio de Caducidad
+    function agregarLineaProducto(desc = "", cat = "General", lote = "N/A", cant = 1, pu = 0.0, dcto = 0.0, caducidad = "") {
+      const tbody = document.querySelector("#tablaLineas tbody");
       const tr = document.createElement("tr");
-      tr.className = "hover:bg-slate-50 transition";
-      
-      const subtotalFinal = subtotal > 0 ? subtotal : (cant * precio * (1.0 - (dcto / 100.0)));
-      const esGasto = cat === "Gasto Operativo";
+      tr.className = "hover:bg-slate-50 transition border-b border-slate-100";
 
       const opcionesCat = CATEGORIAS_SISTEMA.map(c => 
-        `<option value="${c}" ${cat === c ? 'selected' : ''}>${c === 'Gasto Operativo' ? '🚚 Gasto / Envío' : c}</option>`
+        `<option value="${c}" ${c === cat ? 'selected' : ''}>${c}</option>`
       ).join('');
+
+      const caducidadFormateada = caducidad ? String(caducidad).slice(0, 10) : "";
 
       tr.innerHTML = `
         <td class="p-2">
-          <input type="text" list="listaProductosExistentes" placeholder="Nombre del insumo dental..." 
-                 class="item-desc w-full border rounded p-1.5 text-xs font-medium focus:ring-1 focus:ring-blue-500" 
-                 value="${desc}"
-                 oninput="alEscribirProducto(this)"
-                 autocomplete="off">
+          <input type="text" list="listaSugerenciasInsumos" value="${desc}" placeholder="Escribe insumo..." 
+                 class="item-desc w-full border rounded-lg p-1.5 text-xs bg-white focus:ring-1 focus:ring-blue-500 font-medium text-slate-800">
         </td>
         <td class="p-2">
-          <select class="item-cat w-full border rounded p-1.5 text-xs font-semibold ${esGasto ? 'text-purple-700 bg-purple-50' : 'text-slate-700 bg-white'}" onchange="cambiarEstiloCategoria(this)">
+          <select class="item-cat w-full border rounded-lg p-1.5 text-xs bg-white text-slate-700 font-medium focus:ring-1 focus:ring-blue-500">
             ${opcionesCat}
           </select>
         </td>
-        <td class="p-2"><input type="text" class="item-lote w-full border rounded p-1.5 text-xs text-slate-500" value="${lote && lote !== 'N/A' ? lote : ''}"></td>
-        <td class="p-2"><input type="number" step="any" class="item-cant w-full border rounded p-1.5 text-xs text-center" value="${cant}" oninput="recalcularFila(this)"></td>
-        <td class="p-2"><input type="number" step="0.01" class="item-precio w-full border rounded p-1.5 text-xs text-right" value="${precio}" oninput="recalcularFila(this)"></td>
-        <td class="p-2"><input type="number" step="0.1" class="item-dcto w-full border rounded p-1.5 text-xs text-center font-bold text-amber-700" value="${dcto}" oninput="recalcularFila(this)"></td>
-        <td class="p-2 text-right font-bold text-slate-800 item-subtotal-txt">$${subtotalFinal.toFixed(2)}</td>
+        <td class="p-2">
+          <input type="text" value="${lote}" placeholder="N/A" class="item-lote w-full border rounded-lg p-1.5 text-xs bg-white font-mono text-slate-600 font-bold">
+        </td>
+        <td class="p-2">
+          <input type="date" value="${caducidadFormateada}" 
+                 class="item-caducidad w-full border border-slate-300 rounded-lg p-1 text-xs bg-white font-semibold text-slate-800 focus:ring-1 focus:ring-rose-500">
+        </td>
+        <td class="p-2">
+          <input type="number" step="any" value="${cant}" oninput="recalcularTotales()" class="item-cant w-full border rounded-lg p-1.5 text-xs text-center bg-white font-mono font-bold">
+        </td>
+        <td class="p-2">
+          <input type="number" step="0.01" value="${pu}" oninput="recalcularTotales()" class="item-pu w-full border rounded-lg p-1.5 text-xs text-right bg-white font-mono font-bold">
+        </td>
+        <td class="p-2">
+          <input type="number" step="0.1" value="${dcto}" oninput="recalcularTotales()" class="item-dcto w-full border border-amber-300 rounded-lg p-1.5 text-xs text-center bg-amber-50/50 text-amber-800 font-mono font-bold">
+        </td>
+        <td class="p-2 text-right font-black text-slate-800 font-mono item-subtotal-linea">
+          $0.00
+        </td>
         <td class="p-2 text-center">
-          <button onclick="this.closest('tr').remove(); autoCalcularBasesDesdeItems();" class="text-rose-500 hover:text-rose-700 font-bold cursor-pointer text-base">&times;</button>
+          <button type="button" onclick="this.closest('tr').remove(); recalcularTotales();" class="text-rose-500 hover:text-rose-700 font-bold cursor-pointer text-sm">&times;</button>
         </td>
       `;
+
       tbody.appendChild(tr);
+      vincularAutocompletado(tr.querySelector(".item-desc"), tr.querySelector(".item-cat"));
+      recalcularTotales();
     }
 
-    function cambiarEstiloCategoria(select) {
-      if (select.value === "Gasto Operativo") {
-        select.className = "item-cat w-full border rounded p-1.5 text-xs font-semibold text-purple-700 bg-purple-50";
-      } else {
-        select.className = "item-cat w-full border rounded p-1.5 text-xs font-semibold text-slate-700 bg-white";
-      }
-    }
+    function vincularAutocompletado(inputDesc, selectCat) {
+      inputDesc.addEventListener("input", async (e) => {
+        const q = e.target.value.trim();
+        if (q.length < 2) return;
 
-    function agregarLineaManual() {
-      agregarFilaVerificacion("", "General", "", 1, 0.0, 0.0, 0.0);
-    }
-
-    function recalcularFila(input) {
-      const row = input.closest("tr");
-      const cant = parseFloat(row.querySelector(".item-cant").value) || 0;
-      const precio = parseFloat(row.querySelector(".item-precio").value) || 0;
-      const dcto = parseFloat(row.querySelector(".item-dcto").value) || 0;
-
-      const subtotal = cant * precio * (1.0 - (dcto / 100.0));
-      row.querySelector(".item-subtotal-txt").innerText = `$${subtotal.toFixed(2)}`;
-
-      autoCalcularBasesDesdeItems();
-    }
-
-    function autoCalcularBasesDesdeItems() {
-      const rows = document.querySelectorAll("#tablaItemsVerificacion tbody tr");
-      let suma = 0;
-      rows.forEach(r => {
-        const txtSub = r.querySelector(".item-subtotal-txt").innerText.replace("$", "").trim();
-        suma += parseFloat(txtSub) || 0;
+        try {
+          const res = await fetch(`${API_URL}/catalogo/sugerencias?q=${encodeURIComponent(q)}`);
+          if (!res.ok) return;
+          const sugerencias = await res.json();
+          
+          const datalist = document.getElementById("listaSugerenciasInsumos");
+          datalist.innerHTML = "";
+          sugerencias.forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s.descripcion;
+            opt.dataset.categoria = s.categoria;
+            datalist.appendChild(opt);
+          });
+        } catch (err) {
+          console.warn(err);
+        }
       });
 
-      if (modoIngreso === "manual" || parseFloat(document.getElementById("campoTotal").value) === 0) {
-        document.getElementById("campoBaseGravada").value = suma.toFixed(2);
-        const iva = suma * 0.15;
-        document.getElementById("campoIva").value = iva.toFixed(2);
-        document.getElementById("campoTotal").value = (suma + iva).toFixed(2);
-      }
-
-      evaluarCuadreAritmetico();
+      inputDesc.addEventListener("change", (e) => {
+        const val = e.target.value.trim();
+        const datalist = document.getElementById("listaSugerenciasInsumos");
+        const match = Array.from(datalist.options).find(opt => opt.value.toLowerCase() === val.toLowerCase());
+        if (match && match.dataset.categoria) {
+          selectCat.value = match.dataset.categoria;
+        }
+      });
     }
 
-    function evaluarCuadreAritmetico() {
-      const rows = document.querySelectorAll("#tablaItemsVerificacion tbody tr");
-      let sumaSubtotales = 0;
-      rows.forEach(r => {
-        const txtSub = r.querySelector(".item-subtotal-txt").innerText.replace("$", "").trim();
-        sumaSubtotales += parseFloat(txtSub) || 0;
+    function recalcularTotales() {
+      let subtotalBruto = 0.0;
+      let descuentoItems = 0.0;
+      let baseImponibleParcial = 0.0;
+
+      const filas = document.querySelectorAll("#tablaLineas tbody tr");
+      filas.forEach(f => {
+        const cant = parseFloat(f.querySelector(".item-cant").value) || 0.0;
+        const pu = parseFloat(f.querySelector(".item-pu").value) || 0.0;
+        const dcto = parseFloat(f.querySelector(".item-dcto").value) || 0.0;
+
+        const totalSinDcto = cant * pu;
+        const montoDcto = totalSinDcto * (dcto / 100.0);
+        const subtotalNeto = totalSinDcto - montoDcto;
+
+        subtotalBruto += totalSinDcto;
+        descuentoItems += montoDcto;
+        baseImponibleParcial += subtotalNeto;
+
+        f.querySelector(".item-subtotal-linea").innerText = `$${subtotalNeto.toFixed(2)}`;
       });
 
-      const base0 = parseFloat(document.getElementById("campoBase0").value) || 0;
-      const baseGravada = parseFloat(document.getElementById("campoBaseGravada").value) || 0;
-      const iva = parseFloat(document.getElementById("campoIva").value) || 0;
-      const totalFactura = parseFloat(document.getElementById("campoTotal").value) || 0;
+      const descuentoGlobal = parseFloat(document.getElementById("txtDescuentoGlobal").value) || 0.0;
+      const baseFinal = Math.max(0, baseImponibleParcial - descuentoGlobal);
+      const iva = baseFinal * 0.15;
+      const totalFinal = baseFinal + iva;
 
-      const diffBases = Math.abs(sumaSubtotales - (base0 + baseGravada));
-      const diffTotal = Math.abs((sumaSubtotales + iva) - totalFactura);
-      const diff = Math.min(diffBases, diffTotal);
+      document.getElementById("lblSubtotalCalc").innerText = `$${subtotalBruto.toFixed(2)}`;
+      document.getElementById("lblDescuentoItemsCalc").innerText = `-$${descuentoItems.toFixed(2)}`;
+      document.getElementById("lblDescuentoGlobalCalc").innerText = `-$${descuentoGlobal.toFixed(2)}`;
+      document.getElementById("lblBaseIvaCalc").innerText = `$${baseFinal.toFixed(2)}`;
+      document.getElementById("lblIvaCalc").innerText = `$${iva.toFixed(2)}`;
+      document.getElementById("lblTotalCalc").innerText = `$${totalFinal.toFixed(2)}`;
 
-      const badge = document.getElementById("badgeValidacionAritmetica");
-      if (diff <= 0.20) {
-        badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200";
-        badge.innerText = "✓ Matemática Cuadrada";
+      const cajaVal = document.getElementById("cajaValidacionMatematica");
+      const totalDescuentos = descuentoItems + descuentoGlobal;
+      if (baseFinal > 0) {
+        cajaVal.className = "text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 p-2 rounded-xl mt-1 text-center";
+        cajaVal.innerText = `✓ Matemática cuadrada: Bruto $${subtotalBruto.toFixed(2)} - Dctos $${totalDescuentos.toFixed(2)} = Base $${baseFinal.toFixed(2)} (+IVA $${iva.toFixed(2)}) = $${totalFinal.toFixed(2)}`;
       } else {
-        badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200";
-        badge.innerText = `⚠️ Descuadre de $${diff.toFixed(2)}`;
+        cajaVal.className = "text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 p-2 rounded-xl mt-1 text-center";
+        cajaVal.innerText = "Ingresa insumos para validar el cuadre matemático.";
       }
     }
 
-    document.getElementById("btnGuardarDefinitivo").addEventListener("click", async () => {
-      const numFac = document.getElementById("campoNumeroFactura").value.trim();
-      const prov = document.getElementById("campoProveedor").value.trim();
+    let timerDuplicado = null;
+    const inputFactura = document.getElementById("txtNumFactura");
+    const inputRuc = document.getElementById("txtRuc");
+    const inputProv = document.getElementById("txtProveedor");
 
-      if (!numFac || !prov) {
-        alert("El proveedor y el número de factura son obligatorios.");
+    [inputFactura, inputRuc, inputProv].forEach(inp => {
+      inp.addEventListener("input", () => {
+        clearTimeout(timerDuplicado);
+        timerDuplicado = setTimeout(verificarFacturaDuplicada, 300);
+      });
+    });
+
+    async function verificarFacturaDuplicada() {
+      const num = inputFactura.value.trim();
+      const ruc = inputRuc.value.trim();
+      const prov = inputProv.value.trim();
+
+      if (!num || num.length < 2) {
+        document.getElementById("alertaDuplicado").classList.add("hidden");
         return;
       }
 
-      const rows = document.querySelectorAll("#tablaItemsVerificacion tbody tr");
-      const itemsPayload = [];
-      let subtotalGeneral = 0;
+      try {
+        let q = `numero_factura=${encodeURIComponent(num)}`;
+        if (ruc) q += `&proveedor_ruc=${encodeURIComponent(ruc)}`;
+        if (prov) q += `&proveedor_nombre=${encodeURIComponent(prov)}`;
 
-      rows.forEach(r => {
-        const desc = r.querySelector(".item-desc").value.trim();
-        const cat = r.querySelector(".item-cat").value.trim();
-        const lote = r.querySelector(".item-lote").value.trim();
-        const cant = parseFloat(r.querySelector(".item-cant").value) || 0;
-        const precio = parseFloat(r.querySelector(".item-precio").value) || 0;
-        const dcto = parseFloat(r.querySelector(".item-dcto").value) || 0;
-        const txtSub = r.querySelector(".item-subtotal-txt").innerText.replace("$", "").trim();
-        const sub = parseFloat(txtSub) || (cant * precio * (1.0 - (dcto / 100.0)));
+        const res = await fetch(`${API_URL}/facturas/verificar-duplicado?${q}`);
+        if (!res.ok) return;
+        const data = await res.json();
 
-        if (desc.length > 0 && cant > 0) {
-          subtotalGeneral += sub;
-          itemsPayload.push({
+        const banner = document.getElementById("alertaDuplicado");
+        if (data.existe) {
+          document.getElementById("mensajeAlertaDuplicado").innerHTML = 
+            `La factura <strong>#${data.numero_factura}</strong> de <strong>"${data.proveedor}"</strong> ya fue archivada el <strong>${data.fecha_emision}</strong> con un total de <strong>$${data.total.toFixed(2)}</strong>.`;
+          banner.classList.remove("hidden");
+        } else {
+          banner.classList.add("hidden");
+        }
+      } catch (err) {
+        console.warn("Error verificando duplicados:", err);
+      }
+    }
+
+    document.getElementById("formFactura").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const filas = document.querySelectorAll("#tablaLineas tbody tr");
+      const items = [];
+
+      filas.forEach(f => {
+        const desc = f.querySelector(".item-desc").value.trim();
+        const cat = f.querySelector(".item-cat").value.trim();
+        const lote = f.querySelector(".item-lote").value.trim() || "N/A";
+        const caducidad = f.querySelector(".item-caducidad").value || null;
+        const cant = parseFloat(f.querySelector(".item-cant").value) || 0.0;
+        const pu = parseFloat(f.querySelector(".item-pu").value) || 0.0;
+        const dcto = parseFloat(f.querySelector(".item-dcto").value) || 0.0;
+        const pt = (cant * pu) * (1 - (dcto / 100.0));
+
+        if (desc && cant > 0) {
+          items.push({
             descripcion: desc,
-            categoria: cat || "General",
-            lote: lote || "N/A",
+            categoria: cat,
+            lote: lote,
+            fecha_caducidad: caducidad,
             cantidad: cant,
-            precio_unitario: precio,
+            precio_unitario: pu,
             porcentaje_descuento: dcto,
-            subtotal: round(sub),
-            precio_total: round(sub)
+            precio_total: pt
           });
         }
       });
 
-      if (itemsPayload.length === 0) {
-        alert("Debes ingresar al menos una línea.");
+      if (items.length === 0) {
+        alert("Debes agregar al menos un ítem o producto válido en la factura.");
         return;
       }
 
+      const totalCalculado = parseFloat(document.getElementById("lblTotalCalc").innerText.replace('$', '')) || 0.0;
+      const subtotalCalculado = parseFloat(document.getElementById("lblBaseIvaCalc").innerText.replace('$', '')) || 0.0;
+      const ivaCalculado = parseFloat(document.getElementById("lblIvaCalc").innerText.replace('$', '')) || 0.0;
+      const descuentoGlobal = parseFloat(document.getElementById("txtDescuentoGlobal").value) || 0.0;
+      const descuentoItems = parseFloat(document.getElementById("lblDescuentoItemsCalc").innerText.replace('-$', '').replace('$', '')) || 0.0;
+      const descuentoTotalAcum = descuentoItems + descuentoGlobal;
+
+      const btnGuardar = document.getElementById("btnGuardarFactura");
+      btnGuardar.disabled = true;
+      btnGuardar.innerText = "Guardando...";
+
+      if (!urlsComprobanteNube && archivosSeleccionados.length > 0) {
+        try {
+          const formDataFotos = new FormData();
+          archivosSeleccionados.forEach(f => formDataFotos.append("files", f));
+          const resSubida = await fetch(`${API_URL}/facturas/analizar`, {
+            method: "POST",
+            body: formDataFotos
+          });
+          if (resSubida.ok) {
+            const dataFotos = await resSubida.json();
+            if (dataFotos.url_factura) {
+              urlsComprobanteNube = dataFotos.url_factura;
+            }
+          }
+        } catch (e) {
+          console.warn("No se pudo pre-subir archivo:", e);
+        }
+      }
+
       const payload = {
-        proveedor_nombre: prov,
-        proveedor_id_fiscal: document.getElementById("campoRuc").value.trim() || "9999999999999",
-        numero_factura: numFac,
-        numero_autorizacion: document.getElementById("campoAutorizacion").value.trim() || null,
-        fecha_emision: document.getElementById("campoFecha").value || null,
-        estado_pago: document.getElementById("campoEstadoPago").value,
-        comentario: document.getElementById("campoComentario").value.trim() || null,
-        base_iva_0: parseFloat(document.getElementById("campoBase0").value) || 0.0,
-        base_iva_grabada: parseFloat(document.getElementById("campoBaseGravada").value) || subtotalGeneral,
-        porcentaje_iva: 15.0,
-        descuento_total: 0.0,
-        subtotal: round(subtotalGeneral),
-        impuestos: parseFloat(document.getElementById("campoIva").value) || 0.0,
-        total: parseFloat(document.getElementById("campoTotal").value) || 0.0,
-        url_factura: urlArchivosSubidos,
-        items: itemsPayload
+        proveedor_nombre: document.getElementById("txtProveedor").value.trim(),
+        proveedor_id_fiscal: document.getElementById("txtRuc").value.trim() || "9999999999999",
+        numero_factura: document.getElementById("txtNumFactura").value.trim(),
+        fecha_emision: document.getElementById("txtFechaEmision").value,
+        numero_autorizacion: document.getElementById("txtAutorizacion").value.trim() || null,
+        estado_pago: document.getElementById("txtEstadoPago").value,
+        comentario: document.getElementById("txtComentario").value.trim() || null,
+        url_factura: urlsComprobanteNube,
+        subtotal: subtotalCalculado,
+        base_iva_grabada: subtotalCalculado,
+        descuento_total: descuentoTotalAcum,
+        impuestos: ivaCalculado,
+        total: totalCalculado,
+        items: items
       };
 
       try {
@@ -704,28 +627,22 @@
 
         if (!res.ok) {
           const err = await res.json();
-          throw new Error(err.detail || "Error al guardar");
+          throw new Error(err.detail || "Error al guardar en el servidor");
         }
 
-        alert("¡Factura archivada y calculada exitosamente!");
+        alert("¡Factura registrada exitosamente con fecha de caducidad y lote!");
         window.location.href = "dashboard.html";
       } catch (err) {
-        alert("Error al registrar: " + err.message);
+        alert("Error al guardar: " + err.message);
+        btnGuardar.disabled = false;
+        btnGuardar.innerText = "💾 Registrar Factura";
       }
     });
 
-    function round(num) {
-      return Math.round((num + Number.EPSILON) * 100) / 100;
-    }
-
-    function reiniciarEscaneo() {
-      listaArchivos = [];
-      urlArchivosSubidos = null;
-      document.getElementById("inputCamara").value = "";
-      document.getElementById("inputArchivo").value = "";
-      contenedorPreview.classList.add("hidden");
-      cambiarModo("ia");
-    }
+    window.addEventListener("DOMContentLoaded", () => {
+      cargarVersionInstalada();
+      agregarLineaProducto(); // Genera la primera fila de inmediato con su casillero de Caducidad
+    });
   </script>
 </body>
 </html>

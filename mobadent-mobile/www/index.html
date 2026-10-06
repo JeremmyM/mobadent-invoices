@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Mobadent - Registrar Factura</title>
+  <title>Mobadent - Escanear Factura</title>
   <link rel="icon" type="image/x-icon" href="app.ico">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="config.js"></script>
   <script src="db.js"></script>
+  <script src="auth-lock.js"></script>
   <style>
     :root {
       --safe-top: env(safe-area-inset-top, 20px);
@@ -24,7 +25,9 @@
 </head>
 <body class="bg-slate-100 text-slate-800 antialiased selection:bg-blue-600 selection:text-white min-h-screen">
 
-  <!-- Encabezado Superior -->
+  <datalist id="listaSugerenciasInsumos"></datalist>
+
+  <!-- Encabezado Móvil -->
   <header class="sticky top-0 z-30 bg-slate-100/90 backdrop-blur-md px-5 py-3.5 mb-2">
     <div class="flex items-center justify-between max-w-md mx-auto">
       <div class="flex items-center gap-3">
@@ -36,7 +39,7 @@
           <p class="text-[11px] text-slate-400 font-medium">Extracción con Gemini AI</p>
         </div>
       </div>
-      <a href="dashboard.html" class="p-2 rounded-xl bg-white shadow-xs border border-slate-200/80 active:scale-95 text-slate-600 text-xs font-bold transition">
+      <a href="dashboard.html" class="px-3 py-1.5 rounded-xl bg-white shadow-xs border border-slate-200/80 text-xs font-bold text-slate-700 active:scale-95 transition flex items-center gap-1">
         📊 Panel
       </a>
     </div>
@@ -44,203 +47,166 @@
 
   <main class="px-5 space-y-4 max-w-md mx-auto">
 
-    <!-- Pestañas de Modo -->
-    <div class="flex border-b border-slate-200/80 mb-3 gap-2 text-xs font-bold">
-      <button id="tabBtnIA" onclick="cambiarModo('ia')" class="pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5 flex-1 justify-center">
-        📸 Escaneo Inteligente
-      </button>
-      <button id="tabBtnManual" onclick="cambiarModo('manual')" class="pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-800 cursor-pointer flex items-center gap-1.5 flex-1 justify-center">
-        ✍ Ingreso Manual
-      </button>
+    <!-- BANNER: ALERTA DE FACTURA DUPLICADA EN VIVO -->
+    <div id="alertaDuplicado" class="hidden bg-amber-50 border-2 border-amber-400 rounded-2xl p-3.5 transition-all shadow-xs">
+      <div class="flex items-start gap-2.5">
+        <span class="text-2xl">⚠️</span>
+        <div class="flex-1">
+          <h4 class="text-xs font-black text-amber-900 uppercase tracking-wider">Factura Duplicada</h4>
+          <p class="text-[11px] text-amber-800 mt-0.5 font-medium" id="mensajeAlertaDuplicado"></p>
+          <span class="inline-block mt-1.5 text-[10px] font-bold bg-amber-200/60 text-amber-900 px-2 py-0.5 rounded-md">
+            Al guardar, se actualizarán los datos de la factura anterior.
+          </span>
+        </div>
+        <button type="button" onclick="document.getElementById('alertaDuplicado').classList.add('hidden')" class="text-amber-600 font-bold text-lg leading-none">&times;</button>
+      </div>
     </div>
 
-    <!-- MODO 1: ZONA DE CARGA CON IA -->
-    <div id="seccionCargaIA" class="bg-white p-5 rounded-3xl border border-slate-200/70 shadow-xs space-y-3">
-      
-      <div class="grid grid-cols-2 gap-3">
-        <label class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-blue-400 bg-blue-50/50 active:bg-blue-100/60 rounded-2xl cursor-pointer transition text-center group">
-          <span class="text-3xl mb-1 group-active:scale-110 transition-transform">📸</span>
-          <span class="font-bold text-xs text-blue-700">Tomar Foto</span>
-          <span class="text-[10px] text-slate-400 mt-0.5">Cámara trasera</span>
-          <input type="file" id="inputCamara" accept="image/*" capture="environment" class="hidden">
-        </label>
-
-        <label class="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 bg-slate-50/50 active:bg-slate-100/60 rounded-2xl cursor-pointer transition text-center group">
-          <span class="text-3xl mb-1 group-active:scale-110 transition-transform">📁</span>
-          <span class="font-bold text-xs text-slate-700">Galería / PDF</span>
-          <span class="text-[10px] text-slate-400 mt-0.5">Multi-hoja</span>
-          <input type="file" id="inputArchivo" accept="image/*,application/pdf" multiple class="hidden">
-        </label>
+    <!-- SECCIÓN DE CAPTURA MULTI-HOJA -->
+    <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Captura de Documentos</h2>
+          <p class="text-[11px] text-slate-500 font-medium">Toma fotos o sube varias páginas</p>
+        </div>
+        <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full border border-blue-100">Multi-Hoja</span>
       </div>
 
-      <!-- Previsualización -->
-      <div id="contenedorPreview" class="hidden border-t border-slate-100 pt-3 space-y-3">
-        <div class="flex justify-between items-center">
-          <span class="text-xs font-bold text-slate-700" id="contadorHojasTxt">Hojas seleccionadas</span>
-          <button id="btnQuitarArchivos" type="button" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold cursor-pointer">
-            ✕ Quitar
-          </button>
-        </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button type="button" onclick="document.getElementById('inputCamaraMovil').click()" class="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-center active:scale-95 transition cursor-pointer">
+          <span class="text-2xl block mb-1">📸</span>
+          <span class="text-xs font-bold text-blue-700 block">Tomar Foto</span>
+        </button>
 
-        <div id="galeriaHojasPreview" class="grid grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200/80"></div>
+        <button type="button" onclick="document.getElementById('inputGaleriaMovil').click()" class="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-center active:scale-95 transition cursor-pointer">
+          <span class="text-2xl block mb-1">📁</span>
+          <span class="text-xs font-bold text-slate-700 block">Galería / PDF</span>
+        </button>
 
-        <button id="btnProcesarIA" class="w-full py-3.5 bg-blue-600 active:bg-blue-700 text-white font-bold rounded-2xl shadow-md shadow-blue-500/30 transition text-xs flex items-center justify-center gap-2">
-          <span>Extraer Datos con Gemini</span>
+        <input type="file" id="inputCamaraMovil" accept="image/*" capture="environment" class="hidden">
+        <input type="file" id="inputGaleriaMovil" accept="image/*,application/pdf" multiple class="hidden">
+      </div>
+
+      <div id="contenedorHojasCargadas" class="hidden flex flex-wrap gap-2 pt-1 border-t border-slate-100"></div>
+
+      <div class="flex gap-2">
+        <button type="button" id="btnAnalizarMovil" class="hidden flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-blue-500/30 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer">
+          <span>✨</span> Extraer Datos con Gemini AI
         </button>
       </div>
 
-      <!-- Barra de progreso -->
-      <div id="stepperCargando" class="hidden border-t border-slate-100 pt-4 space-y-2">
-        <div class="flex items-center gap-3">
-          <div class="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-xs font-bold text-slate-700" id="txtPasoActual">Procesando...</span>
-        </div>
-        <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-          <div id="barraProgreso" class="bg-blue-600 h-full w-1/4 transition-all duration-500"></div>
-        </div>
+      <div id="spinnerExtraccion" class="hidden py-3 text-center space-y-2">
+        <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+        <p class="text-xs font-bold text-blue-700 animate-pulse">Gemini está digitalizando tus comprobantes...</p>
       </div>
     </div>
 
-    <!-- MODO 2: FORMULARIO DE VERIFICACIÓN -->
-    <div id="seccionVerificacion" class="hidden bg-white p-5 rounded-3xl border border-slate-200/70 shadow-xs space-y-3">
-      
-      <div id="alertaFacturaDuplicada" class="hidden p-3 bg-amber-50 border-l-4 border-amber-500 rounded-r-2xl text-xs space-y-1">
-        <h4 class="font-bold text-amber-900">⚠️ Factura ya registrada</h4>
-        <p class="text-amber-700 text-[11px]" id="mensajeDetalleDuplicado"></p>
-      </div>
-
-      <div class="flex justify-between items-center border-b border-slate-100 pb-2">
-        <div>
-          <h2 class="text-sm font-bold text-slate-900">Datos del Comprobante</h2>
-          <p class="text-[11px] text-slate-400">Verifica montos antes de archivar</p>
+    <!-- FORMULARIO DE FACTURA -->
+    <form id="formFacturaMovil" class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3.5">
+      <div>
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Datos Principales</h2>
+          <button type="button" onclick="vaciarFormularioCompleto()" class="text-[10px] font-bold text-slate-400 hover:text-rose-600 active:scale-95 transition flex items-center gap-1 px-2 py-0.5 rounded-lg border border-transparent hover:border-rose-200 hover:bg-rose-50">
+            <span>🗑</span> Vaciar
+          </button>
         </div>
-        <div id="badgeValidacionAritmetica" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold"></div>
-      </div>
-
-      <div class="space-y-2.5 text-xs">
-        <div>
-          <label class="block font-bold text-slate-500 mb-1">Proveedor / Razón Social:</label>
-          <input type="text" id="campoProveedor" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-semibold text-slate-800">
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
+        <div class="space-y-2 text-xs">
           <div>
-            <label class="block font-bold text-slate-500 mb-1">RUC / ID Fiscal:</label>
-            <input type="text" id="campoRuc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-mono text-slate-800">
+            <label class="text-[10px] font-bold text-slate-400 block mb-0.5">Proveedor:</label>
+            <input type="text" id="txtProveedor" required placeholder="Nombre del proveedor" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
           </div>
-          <div>
-            <label class="block font-bold text-slate-500 mb-1">N° de Factura:</label>
-            <input type="text" id="campoNumeroFactura" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-900">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] font-bold text-slate-400 block mb-0.5">RUC / Cédula:</label>
+              <input type="text" id="txtRuc" placeholder="Identificación fiscal" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="text-[10px] font-bold text-slate-400 block mb-0.5">N° Factura:</label>
+              <input type="text" id="txtNumFactura" required placeholder="001-001-000000001" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
           </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block font-bold text-slate-500 mb-1">Fecha Emisión:</label>
-            <input type="date" id="campoFecha" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-800">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] font-bold text-slate-400 block mb-0.5">Fecha Emisión:</label>
+              <input type="date" id="txtFechaEmision" required class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="text-[10px] font-bold text-slate-400 block mb-0.5">Estado de Pago:</label>
+              <select id="txtEstadoPago" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="Pendiente">⏳ Pendiente</option>
+                <option value="Pagado">✓ Pagado</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label class="block font-bold text-slate-500 mb-1">Estado de Pago:</label>
-            <select id="campoEstadoPago" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800">
-              <option value="Pendiente">⏳ Pendiente</option>
-              <option value="Pagado">✓ Pagado</option>
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label class="block font-bold text-slate-500 mb-1">Nota / Comentario:</label>
-          <input type="text" id="campoComentario" placeholder="Opcional (ej: Transferencia Banco Pichincha)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-800">
         </div>
       </div>
 
+      <!-- PRODUCTOS CON FECHA DE CADUCIDAD -->
       <div class="pt-2 border-t border-slate-100">
         <div class="flex justify-between items-center mb-2">
-          <span class="text-xs font-bold text-slate-700 uppercase tracking-wider">Productos</span>
-          <button onclick="agregarLineaManual()" type="button" class="text-xs bg-blue-50 text-blue-700 font-bold px-3 py-1 rounded-xl border border-blue-200">
-            + Añadir
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Productos Detallados</span>
+          <button type="button" onclick="agregarLineaProducto()" class="px-2.5 py-1 bg-slate-100 text-slate-700 font-bold rounded-xl text-[10px] active:scale-95 transition cursor-pointer">
+            + Añadir Fila
           </button>
         </div>
 
-        <div id="contenedorItemsVerificacion" class="space-y-2"></div>
+        <div id="contenedorFilasProductos" class="space-y-2"></div>
       </div>
 
-      <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <span class="text-slate-400 font-bold text-[10px] uppercase block">Subtotal Bruto</span>
-            <input type="number" step="0.01" id="campoBaseGravada" oninput="evaluarCuadreAritmetico()" class="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-right font-semibold" value="0.00">
-          </div>
-          <div>
-            <span class="text-slate-400 font-bold text-[10px] uppercase block">IVA Liquidado</span>
-            <input type="number" step="0.01" id="campoIva" oninput="evaluarCuadreAritmetico()" class="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-right font-semibold" value="0.00">
-          </div>
+      <!-- MATEMÁTICA FISCAL EN VIVO -->
+      <div class="pt-2 border-t border-slate-100 bg-slate-50 p-3 rounded-2xl space-y-1.5 text-xs">
+        <div class="flex justify-between text-slate-500">
+          <span>Subtotal Neto:</span>
+          <span id="lblSubtotalCalc" class="font-mono font-bold">$0.00</span>
         </div>
-        <div>
-          <span class="text-slate-700 font-bold text-[10px] uppercase block">Total Definitivo</span>
-          <input type="number" step="0.01" id="campoTotal" oninput="evaluarCuadreAritmetico()" class="w-full bg-white border-2 border-emerald-500 rounded-xl p-2 text-right font-black text-slate-900 text-sm" value="0.00">
+        <div class="flex justify-between text-slate-500">
+          <span>IVA (15%):</span>
+          <span id="lblIvaCalc" class="font-mono font-bold">$0.00</span>
+        </div>
+        <div class="flex justify-between text-sm font-black text-slate-900 border-t border-slate-200/80 pt-1.5">
+          <span>Total Liquidado:</span>
+          <span id="lblTotalCalc" class="text-blue-700 font-mono font-black text-base">$0.00</span>
+        </div>
+        <div id="badgeValidacionMat" class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-1.5 rounded-xl text-center mt-1">
+          ✓ Matemática fiscal validada
         </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
-        <button onclick="reiniciarEscaneo()" type="button" class="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600">
-          Cancelar
-        </button>
-        <button id="btnGuardarDefinitivo" type="button" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5">
-          ✓ Guardar en Neon
-        </button>
+      <!-- NOTA -->
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 block mb-0.5">Nota o Comentario:</label>
+        <input type="text" id="txtComentario" placeholder="Ej: Transferencia Banco Pichincha..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800">
       </div>
 
-    </div>
+      <div id="statusSubidaFotos" class="hidden text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 p-2.5 rounded-xl text-center"></div>
+
+      <!-- GUARDAR -->
+      <button type="submit" id="btnGuardarFactura" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-blue-500/30 active:scale-95 transition cursor-pointer">
+        💾 Registrar y Guardar Factura
+      </button>
+    </form>
 
   </main>
 
-  <!-- MODAL: ACTUALIZACIÓN AUTOMÁTICA EN INICIO -->
-  <div id="modalActualizacionIndex" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-5 z-50">
-    <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 text-center space-y-4">
-      <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-3xl mx-auto flex items-center justify-center text-3xl shadow-inner">
-        🚀
-      </div>
-      <div>
-        <h3 class="text-base font-black text-slate-900">¡Nueva versión disponible!</h3>
-        <p class="text-xs text-blue-600 font-bold mt-0.5" id="txtNumeroVersionIndex">Versión 1.1.0</p>
-      </div>
-      <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 text-left">
-        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Novedades de la actualización:</span>
-        <p class="text-xs text-slate-700 whitespace-pre-line font-medium" id="txtNovedadesVersionIndex">
-          Mejoras y optimizaciones disponibles.
-        </p>
-      </div>
-      <div class="space-y-2 pt-2">
-        <a id="btnDescargarActualizacionIndex" href="#" target="_blank" class="w-full block py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-md shadow-blue-500/30 active:scale-95 transition">
-          Descargar e Instalar
-        </a>
-        <button onclick="document.getElementById('modalActualizacionIndex').classList.add('hidden')" class="w-full py-2.5 text-xs text-slate-400 font-semibold hover:text-slate-600 transition">
-          Recordármelo más tarde
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Barra de Navegación Flotante -->
+  <!-- Barra Flotante Inferior -->
   <div class="fixed nav-bar-flotante inset-x-5 z-40 max-w-sm mx-auto">
     <nav class="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-3xl px-6 py-2.5 shadow-xl shadow-slate-900/10 flex justify-around items-center">
-      <a href="dashboard.html" class="flex flex-col items-center text-slate-400 hover:text-slate-600 transition">
+      <a href="dashboard.html" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition">
         <span class="text-xl">📊</span>
         <span class="text-[10px] font-bold mt-0.5">Facturas</span>
       </a>
       
-      <a href="index.html" class="flex flex-col items-center -mt-8 group">
+      <div class="flex flex-col items-center -mt-8">
         <div class="w-14 h-14 rounded-full bg-blue-600 text-white flex items-center justify-center text-2xl shadow-lg shadow-blue-500/40 border-4 border-slate-100">
           📷
         </div>
         <span class="text-[10px] font-bold text-blue-600 mt-1">Escanear</span>
-      </a>
+      </div>
 
-      <a href="dashboard.html" onclick="localStorage.setItem('vista_mobadent', 'catalogo')" class="flex flex-col items-center text-slate-400 hover:text-slate-600 transition">
+      <button onclick="localStorage.setItem('vista_mobadent', 'catalogo'); window.location.href='dashboard.html';" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition">
         <span class="text-xl">📦</span>
         <span class="text-[10px] font-bold mt-0.5">Catálogo</span>
-      </a>
+      </button>
     </nav>
   </div>
 
@@ -259,484 +225,502 @@
       "Gasto Operativo"
     ];
 
-    let listaArchivos = [];
-    let urlsSubidas = [];
-    let modoIngreso = "ia";
-    let timerVerificacionDuplicado = null;
+    const MODELOS_IA_PC = [
+      "gemini-flash-lite-latest",
+      "gemini-3.7-flash",
+      "gemini-3.1-flash-lite",
+      "gemini-2.0-flash"
+    ];
 
-    const inputCamara = document.getElementById("inputCamara");
-    const inputArchivo = document.getElementById("inputArchivo");
-    const contenedorPreview = document.getElementById("contenedorPreview");
-    const galeriaPreview = document.getElementById("galeriaHojasPreview");
-    const contadorHojasTxt = document.getElementById("contadorHojasTxt");
+    const SUPABASE_ANON_KEY_OFICIAL = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZXBsdGhjcXFzamZjZnJ1bGViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2OTg3NzAsImV4cCI6MjEwNjI3NDc3MH0.vF5BiMP6D6v09VaJj9AI674w8S2XKp1r6kR3N9XV9L4";
 
-    function cambiarModo(modo) {
-      modoIngreso = modo;
-      const tabIA = document.getElementById("tabBtnIA");
-      const tabManual = document.getElementById("tabBtnManual");
-      const seccionIA = document.getElementById("seccionCargaIA");
-      const seccionForm = document.getElementById("seccionVerificacion");
+    let archivosSeleccionados = [];
+    let urlsComprobantesGuardadas = [];
 
-      if (modo === "manual") {
-        tabManual.className = "pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5 flex-1 justify-center";
-        tabIA.className = "pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-800 cursor-pointer flex items-center gap-1.5 flex-1 justify-center";
-        seccionIA.classList.add("hidden");
-        seccionForm.classList.remove("hidden");
-        const cont = document.getElementById("contenedorItemsVerificacion");
-        if (cont.children.length === 0) {
-          agregarFilaVerificacion("", "General", "", 1, 0.0, 0.0, 0.0);
-        }
-      } else {
-        tabIA.className = "pb-2.5 border-b-2 border-blue-600 text-blue-600 cursor-pointer flex items-center gap-1.5 flex-1 justify-center";
-        tabManual.className = "pb-2.5 border-b-2 border-transparent text-slate-400 hover:text-slate-800 cursor-pointer flex items-center gap-1.5 flex-1 justify-center";
-        seccionIA.classList.remove("hidden");
-        seccionForm.classList.add("hidden");
-      }
+    // 1. Guardar el objeto nativo File directamente sin dañarlo
+    function manejarSeleccionArchivos(e) {
+      const files = Array.from(e.target.files || []);
+      files.forEach(f => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          archivosSeleccionados.push({
+            file: f, // Archivo nativo binario intacto
+            nombreOriginal: f.name || `foto_${Date.now()}.jpg`,
+            base64: reader.result.split(',')[1], // Únicamente para el prompt de Gemini
+            mimeType: f.type || 'image/jpeg'
+          });
+          renderizarMiniaturas();
+        };
+        reader.readAsDataURL(f);
+      });
+      e.target.value = "";
     }
 
-    inputCamara.addEventListener("change", (e) => {
-      if (e.target.files[0]) {
-        listaArchivos.push(e.target.files[0]);
-        actualizarGaleriaPreview();
-      }
-    });
+    document.getElementById("inputCamaraMovil").addEventListener("change", manejarSeleccionArchivos);
+    document.getElementById("inputGaleriaMovil").addEventListener("change", manejarSeleccionArchivos);
 
-    inputArchivo.addEventListener("change", (e) => {
-      if (e.target.files.length > 0) {
-        for (let i = 0; i < e.target.files.length; i++) {
-          listaArchivos.push(e.target.files[i]);
-        }
-        actualizarGaleriaPreview();
-      }
-    });
+    function renderizarMiniaturas() {
+      const contenedor = document.getElementById("contenedorHojasCargadas");
+      const btnAnalizar = document.getElementById("btnAnalizarMovil");
 
-    function actualizarGaleriaPreview() {
-      if (listaArchivos.length === 0) {
-        contenedorPreview.classList.add("hidden");
+      if (archivosSeleccionados.length === 0) {
+        contenedor.classList.add("hidden");
+        btnAnalizar.classList.add("hidden");
         return;
       }
-      galeriaPreview.innerHTML = "";
-      contadorHojasTxt.innerText = `${listaArchivos.length} hoja(s) de factura lista(s)`;
 
-      listaArchivos.forEach((file, idx) => {
-        const div = document.createElement("div");
-        div.className = "relative border rounded-2xl bg-white p-1 text-center shadow-2xs";
-        
-        if (file.type && file.type.includes("pdf")) {
-          div.innerHTML = `
-            <div class="h-20 flex flex-col items-center justify-center text-slate-500 text-xs font-semibold">
-              <span class="text-2xl">📄</span>
-              <span class="truncate max-w-[100px] text-[10px] mt-1">${file.name}</span>
-            </div>
-          `;
-        } else {
-          const img = document.createElement("img");
-          img.className = "h-20 w-full object-cover rounded-xl";
-          img.src = URL.createObjectURL(file);
-          div.appendChild(img);
-        }
+      contenedor.innerHTML = "";
+      contenedor.classList.remove("hidden");
+      btnAnalizar.classList.remove("hidden");
 
-        const btnQuitar = document.createElement("button");
-        btnQuitar.className = "absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center font-bold cursor-pointer shadow";
-        btnQuitar.innerHTML = "&times;";
-        btnQuitar.onclick = () => {
-          listaArchivos.splice(idx, 1);
-          actualizarGaleriaPreview();
-        };
-        div.appendChild(btnQuitar);
-
-        const lbl = document.createElement("span");
-        lbl.className = "text-[10px] font-bold text-slate-400 block mt-1";
-        lbl.innerText = `Hoja ${idx + 1}`;
-        div.appendChild(lbl);
-
-        galeriaPreview.appendChild(div);
+      archivosSeleccionados.forEach((it, idx) => {
+        const chip = document.createElement("div");
+        chip.className = "flex items-center gap-1.5 bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-xl text-[11px] font-bold text-slate-700";
+        chip.innerHTML = `
+          <span>📄 Hoja ${idx + 1}</span>
+          <button type="button" onclick="quitarHoja(${idx})" class="text-rose-500 font-bold ml-1 text-sm leading-none cursor-pointer">&times;</button>
+        `;
+        contenedor.appendChild(chip);
       });
-
-      contenedorPreview.classList.remove("hidden");
     }
 
-    document.getElementById("btnQuitarArchivos").addEventListener("click", () => {
-      listaArchivos = [];
-      actualizarGaleriaPreview();
-    });
+    function quitarHoja(idx) {
+      archivosSeleccionados.splice(idx, 1);
+      renderizarMiniaturas();
+    }
 
-    document.getElementById("btnProcesarIA").addEventListener("click", async () => {
-      if (listaArchivos.length === 0) return;
+    function vaciarFormularioCompleto() {
+      const confirmar = confirm("¿Deseas vaciar todos los campos y fotos de esta factura?");
+      if (!confirmar) return;
 
-      const stepper = document.getElementById("stepperCargando");
-      const txtPaso = document.getElementById("txtPasoActual");
-      const barra = document.getElementById("barraProgreso");
-      const btnProcesar = document.getElementById("btnProcesarIA");
+      document.getElementById("txtProveedor").value = "";
+      document.getElementById("txtRuc").value = "";
+      document.getElementById("txtNumFactura").value = "";
+      document.getElementById("txtFechaEmision").value = "";
+      document.getElementById("txtComentario").value = "";
+      document.getElementById("txtEstadoPago").value = "Pendiente";
 
-      stepper.classList.remove("hidden");
-      btnProcesar.disabled = true;
-      btnProcesar.classList.add("opacity-50");
+      archivosSeleccionados = [];
+      urlsComprobantesGuardadas = [];
+      renderizarMiniaturas();
 
-      try {
-        txtPaso.innerText = "Subiendo imagen(es) a Supabase Storage...";
-        barra.style.width = "30%";
+      const contenedorItems = document.getElementById("contenedorFilasProductos");
+      contenedorItems.innerHTML = "";
+      agregarLineaProducto();
 
-        urlsSubidas = [];
-        for (const f of listaArchivos) {
-          try {
-            const urlPub = await subirImagenASupabase(f);
-            if (urlPub) urlsSubidas.push(urlPub);
-          } catch (e) {
-            console.warn("Aviso al subir imagen:", e);
-          }
+      document.getElementById("alertaDuplicado").classList.add("hidden");
+      document.getElementById("statusSubidaFotos").classList.add("hidden");
+      recalcularTotales();
+    }
+
+    // Conversión limpia de Base64 a Blob si hiciera falta como fallback
+    function base64ToBlob(base64Data, contentType) {
+      contentType = contentType || 'image/jpeg';
+      const byteCharacters = atob(base64Data);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+      return new Blob([byteArray], { type: contentType });
+    }
+
+    // 2. Subida directa del binario puro a Supabase Storage (cero corrupción de imagen)
+    async function subirComprobantesASupabase() {
+      if (archivosSeleccionados.length === 0) return urlsComprobantesGuardadas;
+
+      const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
+      const urlBase = (cfg?.SUPABASE_URL || "https://gheplthcqqsjfcfruleb.supabase.co").trim().replace(/\/+$/, "");
+      const tokenAnon = SUPABASE_ANON_KEY_OFICIAL.trim();
+
+      const statusBox = document.getElementById("statusSubidaFotos");
+      statusBox.classList.remove("hidden");
+      statusBox.innerText = `Subiendo ${archivosSeleccionados.length} comprobante(s) a Supabase...`;
+
+      const urlsNuevas = [];
+
+      for (let i = 0; i < archivosSeleccionados.length; i++) {
+        const it = archivosSeleccionados[i];
+        const mime = it.file && it.file.type ? it.file.type : (it.mimeType || 'image/jpeg');
+        const ext = mime.includes("pdf") ? "pdf" : "jpg";
+        const nombreArchivo = `${Date.now()}_hoja_${i + 1}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+        const rutaEnBucket = `facturas/${nombreArchivo}`;
+
+        // Usamos directamente el objeto File nativo sin pasar por conversiones intermedias
+        const archivoParaSubir = it.file ? it.file : base64ToBlob(it.base64, mime);
+        const endpoint = `${urlBase}/storage/v1/object/comprobantes/${rutaEnBucket}`;
+
+        const resSubida = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "apikey": tokenAnon,
+            "Authorization": `Bearer ${tokenAnon}`,
+            "Content-Type": mime,
+            "x-upsert": "true"
+          },
+          body: archivoParaSubir
+        });
+
+        if (!resSubida.ok) {
+          const detalleErr = await resSubida.text();
+          console.error("Error al subir a Supabase:", detalleErr);
+          throw new Error(`Error ${resSubida.status}: ${detalleErr}`);
         }
 
-        txtPaso.innerText = "Extrayendo datos con Gemini AI...";
-        barra.style.width = "65%";
+        const urlPublica = `${urlBase}/storage/v1/object/public/comprobantes/${rutaEnBucket}`;
+        urlsNuevas.push(urlPublica);
+      }
 
-        const datos = await extraerFacturaConGemini(listaArchivos);
+      urlsComprobantesGuardadas = urlsNuevas;
+      statusBox.innerText = `✓ ${urlsNuevas.length} comprobante(s) archivado(s) en la nube.`;
+      return urlsNuevas;
+    }
 
-        barra.style.width = "95%";
-        txtPaso.innerText = "Completando formulario...";
+    // Extracción con IA incluyendo fecha de caducidad
+    document.getElementById("btnAnalizarMovil").addEventListener("click", async () => {
+      if (archivosSeleccionados.length === 0) return;
 
-        setTimeout(() => {
-          stepper.classList.add("hidden");
-          btnProcesar.disabled = false;
-          btnProcesar.classList.remove("opacity-50");
-          document.getElementById("seccionCargaIA").classList.add("hidden");
-          cargarFormularioVerificacion(datos);
-        }, 400);
+      const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
+      const rawKeys = cfg?.GEMINI_API_KEY || "";
+      const claves = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
 
-      } catch (err) {
-        alert("Error de extracción: " + err.message);
-        stepper.classList.add("hidden");
-        btnProcesar.disabled = false;
-        btnProcesar.classList.remove("opacity-50");
+      if (claves.length === 0 || claves[0] === "TU_GEMINI_API_KEY") {
+        alert("Falta configurar GEMINI_API_KEY en config.js");
+        return;
+      }
+
+      const spinner = document.getElementById("spinnerExtraccion");
+      const btnAnalizar = document.getElementById("btnAnalizarMovil");
+      spinner.classList.remove("hidden");
+      btnAnalizar.disabled = true;
+
+      const promptSistema = `
+        Eres un auditor y clasificador experto en odontología y suministros clínicos.
+        Se te proporcionan hojas de una misma factura.
+        Consolida todos los ítems en una única lista secuencial.
+        CADUCIDAD / VENCIMIENTO: Para cada insumo, si observas fecha de vencimiento, expiración, venc, caducidad o EXP, extráela en 'fecha_caducidad' en formato exacto 'YYYY-MM-DD'. Si no figura, devuelve null.
+        DISTINCIÓN DE GASTOS: Si corresponde a flete, transporte o envío, asigna en 'categoria' el valor exacto 'Gasto Operativo'.
+        CATEGORÍAS OBLIGATORIAS: 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', 'Periodoncia & Profilaxis',
+        'Impresión & Modelos', 'Prótesis & Laboratorio', 'Instrumental & Fresas',
+        'Bioseguridad & Esterilización', 'Equipos & Repuestos', o 'General'.
+        DESCUENTOS: porcentaje en 'porcentaje_descuento' (0 a 100).
+
+        Devuelve ÚNICAMENTE un JSON válido sin markdown:
+        {
+          "proveedor_nombre": "Nombre comercial",
+          "proveedor_id_fiscal": "RUC o Cédula",
+          "numero_factura": "001-001-000000001",
+          "fecha_emision": "YYYY-MM-DD",
+          "items": [
+            {
+              "descripcion": "Nombre del insumo",
+              "categoria": "General",
+              "cantidad": 1.0,
+              "precio_unitario": 0.00,
+              "porcentaje_descuento": 0.0,
+              "fecha_caducidad": "YYYY-MM-DD"
+            }
+          ]
+        }
+      `;
+
+      const requestBody = {
+        contents: [{
+          parts: [
+            { text: promptSistema },
+            ...archivosSeleccionados.map(it => ({
+              inline_data: { mime_type: it.mimeType, data: it.base64 }
+            }))
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json"
+        }
+      };
+
+      let exito = false;
+      let ultimoError = null;
+
+      for (const apiKey of claves) {
+        if (exito) break;
+
+        for (const modelName of MODELOS_IA_PC) {
+          try {
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+            const res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              ultimoError = errData.error?.message || `HTTP ${res.status}`;
+              console.warn(`Modelo ${modelName} falló:`, ultimoError);
+              continue;
+            }
+
+            const resData = await res.json();
+            const texto = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!texto) continue;
+
+            const jsonLimpio = texto.trim().replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+            const datos = JSON.parse(jsonLimpio);
+
+            if (datos.proveedor_nombre) document.getElementById("txtProveedor").value = datos.proveedor_nombre;
+            if (datos.proveedor_id_fiscal) document.getElementById("txtRuc").value = datos.proveedor_id_fiscal;
+            if (datos.numero_factura) document.getElementById("txtNumFactura").value = datos.numero_factura;
+            if (datos.fecha_emision) document.getElementById("txtFechaEmision").value = String(datos.fecha_emision).slice(0, 10);
+
+            const contenedorItems = document.getElementById("contenedorFilasProductos");
+            contenedorItems.innerHTML = "";
+            if (Array.isArray(datos.items) && datos.items.length > 0) {
+              datos.items.forEach(it => {
+                agregarLineaProducto(
+                  it.descripcion,
+                  it.categoria || "General",
+                  it.cantidad || 1,
+                  it.precio_unitario || 0,
+                  it.porcentaje_descuento || 0,
+                  it.fecha_caducidad || ""
+                );
+              });
+            } else {
+              agregarLineaProducto();
+            }
+
+            recalcularTotales();
+            await verificarFacturaDuplicada();
+            exito = true;
+            break;
+
+          } catch (err) {
+            ultimoError = err.message;
+          }
+        }
+      }
+
+      spinner.classList.add("hidden");
+      btnAnalizar.disabled = false;
+
+      if (!exito) {
+        alert("Error de extracción: " + (ultimoError || "No se pudo comunicar con Gemini"));
       }
     });
 
-    function cargarFormularioVerificacion(data) {
-      document.getElementById("campoProveedor").value = data.proveedor_nombre || "";
-      document.getElementById("campoRuc").value = data.proveedor_id_fiscal || "";
-      document.getElementById("campoNumeroFactura").value = data.numero_factura || "";
-      document.getElementById("campoFecha").value = data.fecha_emision || "";
-      document.getElementById("campoBaseGravada").value = (data.base_iva_grabada || data.subtotal || 0).toFixed(2);
-      document.getElementById("campoIva").value = (data.impuestos || 0).toFixed(2);
-      document.getElementById("campoTotal").value = (data.total || 0).toFixed(2);
+    function agregarLineaProducto(desc = "", cat = "General", cant = 1, pu = 0.0, dcto = 0.0, caducidad = "") {
+      const contenedor = document.getElementById("contenedorFilasProductos");
+      const div = document.createElement("div");
+      div.className = "p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2 relative";
 
-      const cont = document.getElementById("contenedorItemsVerificacion");
-      cont.innerHTML = "";
+      const opcionesCat = CATEGORIAS_SISTEMA.map(c => 
+        `<option value="${c}" ${c === cat ? 'selected' : ''}>${c}</option>`
+      ).join('');
 
-      (data.items || []).forEach(it => {
-        let dcto = parseFloat(it.porcentaje_descuento) || 0;
-        let cant = parseFloat(it.cantidad) || 1;
-        let pu = parseFloat(it.precio_unitario) || 0;
-        let sub = parseFloat(it.subtotal) || (cant * pu * (1 - (dcto / 100)));
+      div.innerHTML = `
+        <button type="button" onclick="this.closest('div').remove(); recalcularTotales();" class="absolute right-2.5 top-2.5 text-rose-500 font-bold text-base leading-none cursor-pointer">&times;</button>
+        <div>
+          <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Descripción:</label>
+          <input type="text" list="listaSugerenciasInsumos" value="${desc}" placeholder="Nombre del insumo" 
+                 class="item-desc w-full bg-white border border-slate-200 rounded-xl px-2 py-1 text-xs font-semibold text-slate-800">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Categoría:</label>
+            <select class="item-cat w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-[11px] font-medium text-slate-700">
+              ${opcionesCat}
+            </select>
+          </div>
+          <div>
+            <label class="text-[9px] font-bold text-rose-500 block mb-0.5">⏳ Caducidad (EXP):</label>
+            <input type="date" value="${caducidad ? String(caducidad).slice(0, 10) : ''}" 
+                   class="item-caducidad w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-[11px] font-semibold text-slate-700">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-2 gap-1">
+            <div>
+              <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Cant:</label>
+              <input type="number" step="any" value="${cant}" oninput="recalcularTotales()" class="item-cant w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-xs text-center font-bold">
+            </div>
+            <div>
+              <label class="text-[9px] font-bold text-slate-400 block mb-0.5">P. Unit:</label>
+              <input type="number" step="0.01" value="${pu}" oninput="recalcularTotales()" class="item-pu w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-xs text-right font-bold">
+            </div>
+          </div>
+          <div class="flex flex-col justify-end">
+            <div class="flex justify-between items-center text-[11px] pt-1">
+              <span class="text-slate-400">Dcto: <input type="number" step="0.1" value="${dcto}" oninput="recalcularTotales()" class="item-dcto w-11 bg-white border rounded px-1 text-center font-bold text-amber-700">%</span>
+              <span class="font-black text-slate-900 item-subtotal-linea">$0.00</span>
+            </div>
+          </div>
+        </div>
+      `;
 
-        agregarFilaVerificacion(
-          it.descripcion,
-          it.categoria || "General",
-          it.lote || "N/A",
-          cant,
-          pu,
-          dcto,
-          sub
-        );
-      });
-
-      document.getElementById("seccionVerificacion").classList.remove("hidden");
-      autoCalcularBasesDesdeItems();
-      ejecutarVerificacionDuplicado();
+      contenedor.appendChild(div);
+      recalcularTotales();
     }
 
-    document.getElementById("campoNumeroFactura").addEventListener("input", () => {
-      clearTimeout(timerVerificacionDuplicado);
-      timerVerificacionDuplicado = setTimeout(ejecutarVerificacionDuplicado, 300);
+    function recalcularTotales() {
+      let subtotal = 0;
+      const divs = document.querySelectorAll("#contenedorFilasProductos > div");
+
+      divs.forEach(d => {
+        const cant = parseFloat(d.querySelector(".item-cant").value) || 0;
+        const pu = parseFloat(d.querySelector(".item-pu").value) || 0;
+        const dcto = parseFloat(d.querySelector(".item-dcto").value) || 0;
+
+        const subLinea = (cant * pu) * (1 - (dcto / 100));
+        subtotal += subLinea;
+        d.querySelector(".item-subtotal-linea").innerText = `$${subLinea.toFixed(2)}`;
+      });
+
+      const iva = +(subtotal * 0.15).toFixed(2);
+      const total = +(subtotal + iva).toFixed(2);
+
+      document.getElementById("lblSubtotalCalc").innerText = `$${subtotal.toFixed(2)}`;
+      document.getElementById("lblIvaCalc").innerText = `$${iva.toFixed(2)}`;
+      document.getElementById("lblTotalCalc").innerText = `$${total.toFixed(2)}`;
+    }
+
+    let timerDuplicado = null;
+    document.getElementById("txtNumFactura").addEventListener("input", () => {
+      clearTimeout(timerDuplicado);
+      timerDuplicado = setTimeout(verificarFacturaDuplicada, 300);
     });
 
-    async function ejecutarVerificacionDuplicado() {
-      const num = document.getElementById("campoNumeroFactura").value.trim();
-      const banner = document.getElementById("alertaFacturaDuplicada");
-      const msg = document.getElementById("mensajeDetalleDuplicado");
-
-      if (num.length < 3) {
-        banner.classList.add("hidden");
+    async function verificarFacturaDuplicada() {
+      const num = document.getElementById("txtNumFactura").value.trim();
+      if (!num || num.length < 2) {
+        document.getElementById("alertaDuplicado").classList.add("hidden");
         return;
       }
 
       try {
         const sql = `
-          SELECT f.id, f.numero_factura, f.total, p.nombre as proveedor
+          SELECT f.id, f.numero_factura, f.fecha_emision, f.total, p.nombre AS proveedor
           FROM facturas f
-          JOIN proveedores p ON p.id = f.proveedor_id
-          WHERE f.numero_factura ILIKE $1
+          LEFT JOIN proveedores p ON p.id = f.proveedor_id
+          WHERE TRIM(f.numero_factura) ILIKE $1
           LIMIT 1;
         `;
-        const res = await neonQuery(sql, [num]);
+        const res = await neonQuery(sql, [`%${num}%`]);
+        const banner = document.getElementById("alertaDuplicado");
 
         if (res && res.length > 0) {
-          const f = res[0];
-          msg.innerHTML = `Factura <strong>#${f.numero_factura}</strong> de <strong>${f.proveedor}</strong> ya existe en Neon ($${parseFloat(f.total).toFixed(2)}).`;
+          const fac = res[0];
+          document.getElementById("mensajeAlertaDuplicado").innerHTML = 
+            `La factura <strong>#${fac.numero_factura}</strong> de <strong>${fac.proveedor}</strong> ya existe con total <strong>$${parseFloat(fac.total).toFixed(2)}</strong>.`;
           banner.classList.remove("hidden");
         } else {
           banner.classList.add("hidden");
         }
-      } catch (err) {
-        console.error(err);
+      } catch (e) {
+        console.warn(e);
       }
     }
 
-    function agregarFilaVerificacion(desc = "", cat = "General", lote = "", cant = 1, precio = 0.0, dcto = 0.0, subtotal = 0.0) {
-      const cont = document.getElementById("contenedorItemsVerificacion");
-      const card = document.createElement("div");
-      card.className = "p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2 item-fila";
-      
-      const subtotalFinal = subtotal > 0 ? subtotal : (cant * precio * (1.0 - (dcto / 100.0)));
+    document.getElementById("formFacturaMovil").addEventListener("submit", async (e) => {
+      e.preventDefault();
 
-      const opcionesCat = CATEGORIAS_SISTEMA.map(c => 
-        `<option value="${c}" ${cat === c ? 'selected' : ''}>${c}</option>`
-      ).join('');
-
-      card.innerHTML = `
-        <div class="flex justify-between items-start gap-2">
-          <input type="text" placeholder="Nombre del insumo..." 
-                 class="item-desc w-full bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800" 
-                 value="${desc}">
-          <button onclick="this.closest('.item-fila').remove(); autoCalcularBasesDesdeItems();" class="text-rose-500 font-bold p-1 leading-none text-base">&times;</button>
-        </div>
-
-        <div class="grid grid-cols-2 gap-2 text-[11px]">
-          <div>
-            <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Categoría:</label>
-            <select class="item-cat w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-700">
-              ${opcionesCat}
-            </select>
-          </div>
-          <div>
-            <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Lote:</label>
-            <input type="text" class="item-lote w-full bg-white border border-slate-200 rounded-lg p-1.5 text-slate-600" value="${lote && lote !== 'N/A' ? lote : ''}">
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-2 text-[11px] items-end">
-          <div>
-            <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Cant:</label>
-            <input type="number" step="any" class="item-cant w-full bg-white border border-slate-200 rounded-lg p-1.5 text-center font-bold" value="${cant}" oninput="recalcularFila(this)">
-          </div>
-          <div>
-            <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Precio:</label>
-            <input type="number" step="0.01" class="item-precio w-full bg-white border border-slate-200 rounded-lg p-1.5 text-right font-bold" value="${precio}" oninput="recalcularFila(this)">
-          </div>
-          <div class="text-right">
-            <span class="text-[9px] font-bold text-slate-400 block mb-0.5">Subtotal:</span>
-            <span class="text-xs font-black text-slate-900 item-subtotal-txt">$${subtotalFinal.toFixed(2)}</span>
-            <input type="hidden" class="item-dcto" value="${dcto}">
-          </div>
-        </div>
-      `;
-      cont.appendChild(card);
-    }
-
-    function agregarLineaManual() {
-      agregarFilaVerificacion("", "General", "", 1, 0.0, 0.0, 0.0);
-    }
-
-    function recalcularFila(input) {
-      const row = input.closest(".item-fila");
-      const cant = parseFloat(row.querySelector(".item-cant").value) || 0;
-      const precio = parseFloat(row.querySelector(".item-precio").value) || 0;
-      const dcto = parseFloat(row.querySelector(".item-dcto").value) || 0;
-
-      const subtotal = cant * precio * (1.0 - (dcto / 100.0));
-      row.querySelector(".item-subtotal-txt").innerText = `$${subtotal.toFixed(2)}`;
-
-      autoCalcularBasesDesdeItems();
-    }
-
-    function autoCalcularBasesDesdeItems() {
-      const rows = document.querySelectorAll(".item-fila");
-      let suma = 0;
-      rows.forEach(r => {
-        const txtSub = r.querySelector(".item-subtotal-txt").innerText.replace("$", "").trim();
-        suma += parseFloat(txtSub) || 0;
-      });
-
-      if (modoIngreso === "manual" || parseFloat(document.getElementById("campoTotal").value) === 0) {
-        document.getElementById("campoBaseGravada").value = suma.toFixed(2);
-        const iva = suma * 0.15;
-        document.getElementById("campoIva").value = iva.toFixed(2);
-        document.getElementById("campoTotal").value = (suma + iva).toFixed(2);
-      }
-
-      evaluarCuadreAritmetico();
-    }
-
-    function evaluarCuadreAritmetico() {
-      const rows = document.querySelectorAll(".item-fila");
-      let suma = 0;
-      rows.forEach(r => {
-        const txtSub = r.querySelector(".item-subtotal-txt").innerText.replace("$", "").trim();
-        suma += parseFloat(txtSub) || 0;
-      });
-
-      const totalFactura = parseFloat(document.getElementById("campoTotal").value) || 0;
-      const iva = parseFloat(document.getElementById("campoIva").value) || 0;
-      const diff = Math.abs((suma + iva) - totalFactura);
-
-      const badge = document.getElementById("badgeValidacionAritmetica");
-      if (diff <= 0.20) {
-        badge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800";
-        badge.innerText = "✓ Cuadrado";
-      } else {
-        badge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700";
-        badge.innerText = `⚠️ Descuadre $${diff.toFixed(2)}`;
-      }
-    }
-
-    document.getElementById("btnGuardarDefinitivo").addEventListener("click", async () => {
-      const numFac = document.getElementById("campoNumeroFactura").value.trim();
-      const prov = document.getElementById("campoProveedor").value.trim();
-      const ruc = document.getElementById("campoRuc").value.trim() || "9999999999999";
-
-      if (!numFac || !prov) {
-        alert("El proveedor y el número de factura son obligatorios.");
-        return;
-      }
-
-      const rows = document.querySelectorAll(".item-fila");
-      const items = [];
-      let subtotalGeneral = 0;
-
-      rows.forEach(r => {
-        const desc = r.querySelector(".item-desc").value.trim();
-        const cat = r.querySelector(".item-cat").value.trim();
-        const lote = r.querySelector(".item-lote").value.trim();
-        const cant = parseFloat(r.querySelector(".item-cant").value) || 0;
-        const precio = parseFloat(r.querySelector(".item-precio").value) || 0;
-        const dcto = parseFloat(r.querySelector(".item-dcto").value) || 0;
-        const sub = cant * precio * (1.0 - (dcto / 100.0));
-
-        if (desc.length > 0 && cant > 0) {
-          subtotalGeneral += sub;
-          items.push({
-            descripcion: desc,
-            categoria: cat || "General",
-            lote: lote || "N/A",
-            cantidad: cant,
-            precio_unitario: precio,
-            porcentaje_descuento: dcto,
-            precio_total: Math.round(sub * 100) / 100
-          });
-        }
-      });
-
-      if (items.length === 0) {
-        alert("Debes ingresar al menos un insumo.");
-        return;
-      }
-
-      const btn = document.getElementById("btnGuardarDefinitivo");
-      btn.disabled = true;
-      btn.innerText = "Guardando...";
+      const btnGuardar = document.getElementById("btnGuardarFactura");
+      btnGuardar.disabled = true;
+      btnGuardar.innerText = "Subiendo y guardando...";
 
       try {
-        let provRes = await neonQuery("SELECT id FROM proveedores WHERE identificacion_fiscal = $1 LIMIT 1;", [ruc]);
-        let proveedorId;
-
-        if (provRes.length > 0) {
-          proveedorId = provRes[0].id;
-          await neonQuery("UPDATE proveedores SET nombre = $1 WHERE id = $2;", [prov, proveedorId]);
-        } else {
-          const nuevoProv = await neonQuery(
-            "INSERT INTO proveedores (nombre, identificacion_fiscal) VALUES ($1, $2) RETURNING id;",
-            [prov, ruc]
-          );
-          proveedorId = nuevoProv[0].id;
-        }
-
-        const fechaEmision = document.getElementById("campoFecha").value || new Date().toISOString().split('T')[0];
-        const estPago = document.getElementById("campoEstadoPago").value;
-        const coment = document.getElementById("campoComentario").value.trim() || null;
-        const iva = parseFloat(document.getElementById("campoIva").value) || 0.0;
-        const tot = parseFloat(document.getElementById("campoTotal").value) || (subtotalGeneral + iva);
-        const urlFac = urlsSubidas.length > 0 ? urlsSubidas.join(',') : null;
-        const cfg = window.CONFIG || CONFIG;
-
-        let facExistente = await neonQuery(
-          "SELECT id FROM facturas WHERE proveedor_id = $1 AND numero_factura = $2 LIMIT 1;",
-          [proveedorId, numFac]
-        );
-
-        let facturaId;
-        if (facExistente.length > 0) {
-          facturaId = facExistente[0].id;
-          await neonQuery(`
-            UPDATE facturas SET 
-              fecha_emision = $1, estado_pago = $2, comentario = $3,
-              subtotal = $4, impuestos = $5, total = $6,
-              url_factura = COALESCE($7, url_factura)
-            WHERE id = $8;
-          `, [fechaEmision, estPago, coment, subtotalGeneral, iva, tot, urlFac, facturaId]);
-
-          await neonQuery("DELETE FROM detalles_factura WHERE factura_id = $1;", [facturaId]);
-        } else {
-          const nuevaFac = await neonQuery(`
-            INSERT INTO facturas (
-              proveedor_id, numero_factura, fecha_emision,
-              estado_pago, comentario, subtotal,
-              impuestos, total, dispositivo_origen, url_factura
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id;
-          `, [proveedorId, numFac, fechaEmision, estPago, coment, subtotalGeneral, iva, tot, cfg.DEVICE_NAME || "Móvil Jeremmy", urlFac]);
-          facturaId = nuevaFac[0].id;
-        }
-
-        for (const it of items) {
-          await neonQuery(`
-            INSERT INTO detalles_factura (
-              factura_id, descripcion, categoria, lote, cantidad, precio_unitario, porcentaje_descuento, precio_total
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-          `, [facturaId, it.descripcion, it.categoria, it.lote, it.cantidad, it.precio_unitario, it.porcentaje_descuento, it.precio_total]);
-
-          if (it.categoria !== "Gasto Operativo") {
-            const norm = it.descripcion.toLowerCase().trim().replace(/\s+/g, ' ');
-            await neonQuery(`
-              INSERT INTO catalogo_insumos (descripcion_normalizada, categoria)
-              VALUES ($1, $2)
-              ON CONFLICT (descripcion_normalizada) 
-              DO UPDATE SET categoria = EXCLUDED.categoria WHERE catalogo_insumos.categoria = 'General';
-            `, [norm, it.categoria]);
+        let urlFinalComprobantes = "";
+        try {
+          const urls = await subirComprobantesASupabase();
+          urlFinalComprobantes = urls.join(",");
+        } catch (uploadError) {
+          console.error("Error subiendo fotos:", uploadError);
+          const seguirSinFotos = confirm(`Hubo un problema al subir la foto a Supabase:\n${uploadError.message}\n\n¿Deseas guardar la factura de todos modos sin la foto adjunta?`);
+          if (!seguirSinFotos) {
+            btnGuardar.disabled = false;
+            btnGuardar.innerText = "💾 Registrar y Guardar Factura";
+            return;
           }
         }
 
-        alert("¡Factura archivada directamente en Neon!");
+        const nombreProv = document.getElementById("txtProveedor").value.trim();
+        const rucProv = document.getElementById("txtRuc").value.trim() || "9999999999999";
+
+        let provRes = await neonQuery("SELECT id FROM proveedores WHERE identificacion_fiscal = $1 LIMIT 1;", [rucProv]);
+        let provId = null;
+
+        if (provRes && provRes.length > 0) {
+          provId = provRes[0].id;
+        } else {
+          const nuevoProv = await neonQuery("INSERT INTO proveedores (nombre, identificacion_fiscal) VALUES ($1, $2) RETURNING id;", [nombreProv, rucProv]);
+          provId = nuevoProv[0].id;
+        }
+
+        const numFactura = document.getElementById("txtNumFactura").value.trim();
+        const fechaEmision = document.getElementById("txtFechaEmision").value;
+        const estadoPago = document.getElementById("txtEstadoPago").value;
+        const comentario = document.getElementById("txtComentario").value.trim() || null;
+        const total = parseFloat(document.getElementById("lblTotalCalc").innerText.replace('$', '')) || 0;
+        const subtotal = parseFloat(document.getElementById("lblSubtotalCalc").innerText.replace('$', '')) || 0;
+        const iva = parseFloat(document.getElementById("lblIvaCalc").innerText.replace('$', '')) || 0;
+
+        const facExistente = await neonQuery("SELECT id, url_factura FROM facturas WHERE proveedor_id = $1 AND numero_factura = $2 LIMIT 1;", [provId, numFactura]);
+        let facturaId = null;
+
+        if (facExistente && facExistente.length > 0) {
+          facturaId = facExistente[0].id;
+          let urlAUsar = urlFinalComprobantes;
+          if (!urlAUsar && facExistente[0].url_factura) {
+            urlAUsar = facExistente[0].url_factura;
+          } else if (urlAUsar && facExistente[0].url_factura) {
+            urlAUsar = `${facExistente[0].url_factura},${urlAUsar}`;
+          }
+
+          await neonQuery(`
+            UPDATE facturas 
+            SET fecha_emision = $1, estado_pago = $2, comentario = $3, subtotal = $4, impuestos = $5, total = $6, url_factura = $7
+            WHERE id = $8;
+          `, [fechaEmision, estadoPago, comentario, subtotal, iva, total, urlAUsar, facturaId]);
+          await neonQuery("DELETE FROM detalles_factura WHERE factura_id = $1;", [facturaId]);
+        } else {
+          const nuevaFac = await neonQuery(`
+            INSERT INTO facturas (proveedor_id, numero_factura, fecha_emision, estado_pago, comentario, subtotal, impuestos, total, url_factura, dispositivo_origen)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Android')
+            RETURNING id;
+          `, [provId, numFactura, fechaEmision, estadoPago, comentario, subtotal, iva, total, urlFinalComprobantes]);
+          facturaId = nuevaFac[0].id;
+        }
+
+        // Guardado de ítems con fecha_caducidad
+        const divs = document.querySelectorAll("#contenedorFilasProductos > div");
+        for (const d of divs) {
+          const desc = d.querySelector(".item-desc").value.trim();
+          const cat = d.querySelector(".item-cat").value;
+          const caducidadVal = d.querySelector(".item-caducidad").value || null;
+          const cant = parseFloat(d.querySelector(".item-cant").value) || 1;
+          const pu = parseFloat(d.querySelector(".item-pu").value) || 0;
+          const dcto = parseFloat(d.querySelector(".item-dcto").value) || 0;
+          const sub = (cant * pu) * (1 - (dcto / 100));
+
+          if (desc) {
+            await neonQuery(`
+              INSERT INTO detalles_factura (factura_id, descripcion, categoria, cantidad, precio_unitario, porcentaje_descuento, precio_total, fecha_caducidad)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+            `, [facturaId, desc, cat, cant, pu, dcto, sub, caducidadVal]);
+          }
+        }
+
+        alert("¡Factura archivada y comprobante vinculado con éxito!");
         window.location.href = "dashboard.html";
+
       } catch (err) {
-        alert("Error al guardar: " + err.message);
-        btn.disabled = false;
-        btn.innerText = "✓ Guardar en Neon";
+        alert("Error al registrar factura: " + err.message);
+        btnGuardar.disabled = false;
+        btnGuardar.innerText = "💾 Registrar y Guardar Factura";
       }
     });
 
-    function reiniciarEscaneo() {
-      listaArchivos = [];
-      urlsSubidas = [];
-      document.getElementById("inputCamara").value = "";
-      document.getElementById("inputArchivo").value = "";
-      contenedorPreview.classList.add("hidden");
-      cambiarModo("ia");
-    }
-
-    // Comprobación de versión apenas abre la app
-    async function comprobarVersionAlIniciar() {
-      if (typeof verificarActualizacionDisponible !== "function") return;
-      const act = await verificarActualizacionDisponible();
-      if (act) {
-        document.getElementById("txtNumeroVersionIndex").innerText = `Versión ${act.version_nombre}`;
-        document.getElementById("txtNovedadesVersionIndex").innerText = act.novedades || "Mejoras del sistema disponibles.";
-        document.getElementById("btnDescargarActualizacionIndex").href = act.url_apk;
-        document.getElementById("modalActualizacionIndex").classList.remove("hidden");
-      }
-    }
-
     window.addEventListener("DOMContentLoaded", () => {
-      setTimeout(comprobarVersionAlIniciar, 1200);
+      agregarLineaProducto();
     });
   </script>
 </body>

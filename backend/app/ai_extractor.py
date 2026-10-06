@@ -22,6 +22,37 @@ if os.path.exists(env_path):
 else:
     load_dotenv()
 
+
+def normalizar_fecha_latam(v: Any) -> Optional[str]:
+    """
+    Convierte fechas numéricas ecuatorianas/latinas (DD/MM/YYYY)
+    estrictamente al formato ISO (YYYY-MM-DD).
+    Ejemplo: 02/10/2026 -> 2026-10-02 (2 de octubre de 2026).
+    """
+    if not v or str(v).lower() in ["none", "null", "n/a", "s/f", ""]:
+        return None
+    v_str = str(v).strip()
+    
+    # 1. Ya viene en formato ISO YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", v_str):
+        return v_str
+
+    # 2. Formato latino DD/MM/YYYY o DD-MM-YYYY
+    m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$", v_str)
+    if m:
+        dia, mes, anio = m.groups()
+        return f"{anio}-{mes.zfill(2)}-{dia.zfill(2)}"
+
+    # 3. Formato corto latino DD/MM/YY
+    m_corto = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})$", v_str)
+    if m_corto:
+        dia, mes, anio_corto = m_corto.groups()
+        anio = f"20{anio_corto}"
+        return f"{anio}-{mes.zfill(2)}-{dia.zfill(2)}"
+
+    return None
+
+
 class ItemFacturaAI(BaseModel):
     descripcion: str = Field(default="", description="Nombre o descripción concisa del insumo")
     lote: Optional[str] = Field(default="N/A", description="Número de lote si aparece, sino N/A")
@@ -34,17 +65,9 @@ class ItemFacturaAI(BaseModel):
 
     @field_validator("fecha_caducidad", mode="before")
     @classmethod
-    def normalizar_fecha(cls, v: Any) -> Optional[str]:
-        if not v or str(v).lower() in ["none", "null", "n/a", "s/f", ""]:
-            return None
-        v_str = str(v).strip()
-        m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$", v_str)
-        if m:
-            d, mes, a = m.groups()
-            return f"{a}-{mes.zfill(2)}-{d.zfill(2)}"
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", v_str):
-            return v_str
-        return None
+    def validar_fecha_caducidad(cls, v: Any) -> Optional[str]:
+        return normalizar_fecha_latam(v)
+
 
 class FacturaExtraccionAI(BaseModel):
     proveedor_nombre: str = Field(default="Proveedor General", description="Razón social del emisor")
@@ -60,11 +83,18 @@ class FacturaExtraccionAI(BaseModel):
     total: float = Field(default=0.0)
     items: List[ItemFacturaAI] = Field(default_factory=list)
 
+    @field_validator("fecha_emision", mode="before")
+    @classmethod
+    def validar_fecha_emision(cls, v: Any) -> Optional[str]:
+        return normalizar_fecha_latam(v)
+
+
 def obtener_claves_api() -> List[str]:
     raw_keys = os.getenv("GEMINI_API_KEY", "")
     if not raw_keys:
         raise RuntimeError("GEMINI_API_KEY no encontrada en el archivo .env.")
     return [k.strip() for k in raw_keys.split(",") if k.strip()]
+
 
 def preparar_foto(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     if "pdf" in mime_type.lower():
@@ -82,17 +112,23 @@ def preparar_foto(file_bytes: bytes, mime_type: str) -> tuple[bytes, str]:
     except Exception:
         return file_bytes, mime_type
 
+
 async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> FacturaExtraccionAI:
     claves = obtener_claves_api()
 
     prompt = (
-        "Eres un auditor y clasificador experto en insumos odontológicos. "
-        "Consolida todos los ítems de las hojas de la factura. "
-        "CAMPOS OBLIGATORIOS POR ÍTEM: "
-        "- 'descripcion': nombre conciso del insumo. "
-        "- 'lote': número de lote o 'N/A' si no figura. "
-        "- 'fecha_caducidad': fecha de vencimiento o EXP en formato 'YYYY-MM-DD' o null si no figura. "
-        "- 'cantidad', 'precio_unitario', 'porcentaje_descuento', 'subtotal'. "
+        "Eres un auditor y clasificador experto en insumos odontológicos y facturas comerciales en Ecuador. "
+        "Consolida todos los ítems de las hojas de la factura en una lista única.\n\n"
+        "REGLA CRÍTICA DE FECHAS (FORMATO ECUATORIANO):\n"
+        "- Toda fecha numérica que leas (ej: '02/10/2026' o '02-10-2026') está escrita en formato latinoamericano "
+        "DD/MM/YYYY (Día 02, Mes 10 = Octubre, Año 2026). "
+        "Debes convertirla estrictamente a formato ISO 'YYYY-MM-DD' (ejemplo: '2026-10-02'). "
+        "BAJO NINGUNA CIRCUNSTANCIA interpretes el primer número como el mes.\n\n"
+        "CAMPOS OBLIGATORIOS POR ÍTEM:\n"
+        "- 'descripcion': nombre conciso del insumo.\n"
+        "- 'lote': número de lote o 'N/A' si no figura.\n"
+        "- 'fecha_caducidad': fecha de vencimiento o EXP convertida a 'YYYY-MM-DD' (o null si no figura).\n"
+        "- 'cantidad', 'precio_unitario', 'porcentaje_descuento', 'subtotal'.\n"
         "- 'categoria': clasifica en 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', "
         "'Periodoncia & Profilaxis', 'Impresión & Modelos', 'Prótesis & Laboratorio', "
         "'Instrumental & Fresas', 'Bioseguridad & Esterilización', 'Equipos & Repuestos', "
@@ -106,6 +142,7 @@ async def procesar_documentos_factura(archivos: List[Tuple[bytes, str]]) -> Fact
 
     partes.append(prompt)
 
+    # Conservamos exactamente tu lista de modelos
     modelos = [
         "gemini-flash-lite-latest",
         "gemini-3.7-flash",

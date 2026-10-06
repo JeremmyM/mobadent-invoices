@@ -99,8 +99,8 @@ def identificar_dispositivo_local() -> str:
 # ==============================================================
 # VERSIÓN LOCAL OFICIAL DE ESCRITORIO
 # ==============================================================
-VERSION_LOCAL_DESKTOP_CODIGO = 5
-VERSION_LOCAL_DESKTOP_NOMBRE = "1.5.0"
+VERSION_LOCAL_DESKTOP_CODIGO = 6
+VERSION_LOCAL_DESKTOP_NOMBRE = "1.6.0"
 
 @app.get("/api/sistema/info")
 def obtener_info_sistema():

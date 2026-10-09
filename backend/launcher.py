@@ -43,7 +43,8 @@ def puerto_activo(host="127.0.0.1", port=8000) -> bool:
         return s.connect_ex((host, port)) == 0
 
 def abrir_ventana():
-    url = "http://127.0.0.1:8000/frontend/dashboard.html"
+    # URL directa a la raíz servida por FastAPI
+    url = "http://127.0.0.1:8000/"
     
     # Espera a que el backend esté listo
     for _ in range(80):
@@ -71,7 +72,7 @@ def abrir_ventana():
             navegador,
             f"--app={url}",
             f"--user-data-dir={user_data_path}",
-            "--window-size=1350,880"
+            "--window-size=1366,880"
         ])
     else:
         import webbrowser

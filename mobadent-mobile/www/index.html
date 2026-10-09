@@ -3,11 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Mobadent - Escanear Factura</title>
   <link rel="icon" type="image/x-icon" href="app.ico">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="config.js"></script>
   <script src="db.js"></script>
+  <script src="gemini.js"></script>
   <script src="auth-lock.js"></script>
   <style>
     :root {
@@ -27,7 +31,6 @@
 
   <datalist id="listaSugerenciasInsumos"></datalist>
 
-  <!-- Encabezado Móvil -->
   <header class="sticky top-0 z-30 bg-slate-100/90 backdrop-blur-md px-5 py-3.5 mb-2">
     <div class="flex items-center justify-between max-w-md mx-auto">
       <div class="flex items-center gap-3">
@@ -36,7 +39,7 @@
         </div>
         <div>
           <h1 class="text-lg font-black text-slate-900 leading-tight">Captura de Compra</h1>
-          <p class="text-[11px] text-slate-400 font-medium">Extracción con Gemini AI</p>
+          <p class="text-[11px] text-slate-400 font-medium">Auditoría Fiscal & Lotes (Ecuador)</p>
         </div>
       </div>
       <a href="dashboard.html" class="px-3 py-1.5 rounded-xl bg-white shadow-xs border border-slate-200/80 text-xs font-bold text-slate-700 active:scale-95 transition flex items-center gap-1">
@@ -47,7 +50,6 @@
 
   <main class="px-5 space-y-4 max-w-md mx-auto">
 
-    <!-- BANNER: ALERTA DE FACTURA DUPLICADA EN VIVO -->
     <div id="alertaDuplicado" class="hidden bg-amber-50 border-2 border-amber-400 rounded-2xl p-3.5 transition-all shadow-xs">
       <div class="flex items-start gap-2.5">
         <span class="text-2xl">⚠️</span>
@@ -62,12 +64,11 @@
       </div>
     </div>
 
-    <!-- SECCIÓN DE CAPTURA MULTI-HOJA -->
     <div class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3">
       <div class="flex justify-between items-center">
         <div>
           <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Captura de Documentos</h2>
-          <p class="text-[11px] text-slate-500 font-medium">Toma fotos o sube varias páginas</p>
+          <p class="text-[11px] text-slate-500 font-medium">Sube todas las hojas de la factura juntas</p>
         </div>
         <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full border border-blue-100">Multi-Hoja</span>
       </div>
@@ -97,11 +98,10 @@
 
       <div id="spinnerExtraccion" class="hidden py-3 text-center space-y-2">
         <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
-        <p class="text-xs font-bold text-blue-700 animate-pulse">Gemini está digitalizando tus comprobantes...</p>
+        <p class="text-xs font-bold text-blue-700 animate-pulse">Gemini está analizando las hojas e impuestos...</p>
       </div>
     </div>
 
-    <!-- FORMULARIO DE FACTURA -->
     <form id="formFacturaMovil" class="bg-white p-4 rounded-3xl border border-slate-200/70 shadow-xs space-y-3.5">
       <div>
         <div class="flex justify-between items-center mb-2">
@@ -138,10 +138,14 @@
               </select>
             </div>
           </div>
+          
+          <div>
+            <label class="text-[10px] font-bold text-amber-800 block mb-0.5">Descuento Global Adicional ($):</label>
+            <input type="number" step="0.01" id="txtDescuentoGlobal" value="0.00" oninput="recalcularTotales()" class="w-full bg-amber-50/60 border border-amber-300 rounded-xl px-2.5 py-2 font-mono font-bold text-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-500">
+          </div>
         </div>
       </div>
 
-      <!-- PRODUCTOS CON FECHA DE CADUCIDAD -->
       <div class="pt-2 border-t border-slate-100">
         <div class="flex justify-between items-center mb-2">
           <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Productos Detallados</span>
@@ -150,37 +154,57 @@
           </button>
         </div>
 
-        <div id="contenedorFilasProductos" class="space-y-2"></div>
+        <div id="contenedorFilasProductos" class="space-y-2.5"></div>
       </div>
 
-      <!-- MATEMÁTICA FISCAL EN VIVO -->
-      <div class="pt-2 border-t border-slate-100 bg-slate-50 p-3 rounded-2xl space-y-1.5 text-xs">
+      <div class="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-1">
+        <label class="text-[10px] font-black text-blue-900 uppercase block tracking-wider">Total Oficial Impreso en Factura ($):</label>
+        <input type="number" step="0.01" id="txtTotalFacturaImpreso" placeholder="0.00" oninput="recalcularTotales()" class="w-full bg-white border border-blue-300 rounded-xl px-3 py-2 text-base font-black font-mono text-blue-900 focus:ring-2 focus:ring-blue-500">
+        <p class="text-[10px] text-blue-700 font-medium">El valor impreso al final del comprobante para auditar cuadre.</p>
+      </div>
+
+      <div class="bg-slate-50 p-3.5 rounded-2xl space-y-1.5 text-xs border border-slate-200">
         <div class="flex justify-between text-slate-500">
-          <span>Subtotal Neto:</span>
+          <span>Subtotal Bruto:</span>
           <span id="lblSubtotalCalc" class="font-mono font-bold">$0.00</span>
         </div>
-        <div class="flex justify-between text-slate-500">
-          <span>IVA (15%):</span>
+        <div class="flex justify-between text-amber-700 font-bold">
+          <span>Descuento en Ítems:</span>
+          <span id="lblDctoItemsCalc" class="font-mono">-$0.00</span>
+        </div>
+        <div class="flex justify-between text-amber-800 font-bold">
+          <span>Descuento Global Adicional:</span>
+          <span id="lblDctoGlobalCalc" class="font-mono">-$0.00</span>
+        </div>
+        <div class="flex justify-between text-slate-600 border-t border-slate-200 pt-1">
+          <span>Base 0% (Exento de IVA):</span>
+          <span id="lblBase0Calc" class="font-mono font-bold">$0.00</span>
+        </div>
+        <div class="flex justify-between text-slate-700 font-bold">
+          <span>Base Gravada (Subtotal neto):</span>
+          <span id="lblBase15Calc" class="font-mono font-bold">$0.00</span>
+        </div>
+        <div class="flex justify-between text-slate-600">
+          <span>IVA Liquidado (15%):</span>
           <span id="lblIvaCalc" class="font-mono font-bold">$0.00</span>
         </div>
         <div class="flex justify-between text-sm font-black text-slate-900 border-t border-slate-200/80 pt-1.5">
-          <span>Total Liquidado:</span>
+          <span>Total Calculado por Ítems:</span>
           <span id="lblTotalCalc" class="text-blue-700 font-mono font-black text-base">$0.00</span>
         </div>
-        <div id="badgeValidacionMat" class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-1.5 rounded-xl text-center mt-1">
-          ✓ Matemática fiscal validada
+        
+        <div id="badgeValidacionMat" class="text-[11px] font-bold p-2.5 rounded-xl text-center mt-2 bg-slate-100 text-slate-500 border border-slate-200">
+          Ingresa insumos para auditar el cuadre con la factura.
         </div>
       </div>
 
-      <!-- NOTA -->
       <div>
         <label class="text-[10px] font-bold text-slate-400 block mb-0.5">Nota o Comentario:</label>
-        <input type="text" id="txtComentario" placeholder="Ej: Transferencia Banco Pichincha..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800">
+        <input type="text" id="txtComentario" placeholder="Ej: Pago con transferencia..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs text-slate-800">
       </div>
 
       <div id="statusSubidaFotos" class="hidden text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 p-2.5 rounded-xl text-center"></div>
 
-      <!-- GUARDAR -->
       <button type="submit" id="btnGuardarFactura" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-blue-500/30 active:scale-95 transition cursor-pointer">
         💾 Registrar y Guardar Factura
       </button>
@@ -188,7 +212,6 @@
 
   </main>
 
-  <!-- Barra Flotante Inferior -->
   <div class="fixed nav-bar-flotante inset-x-5 z-40 max-w-sm mx-auto">
     <nav class="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-3xl px-6 py-2.5 shadow-xl shadow-slate-900/10 flex justify-around items-center">
       <a href="dashboard.html" class="flex flex-col items-center text-slate-400 active:text-slate-600 transition">
@@ -225,28 +248,20 @@
       "Gasto Operativo"
     ];
 
-    const MODELOS_IA_PC = [
-      "gemini-flash-lite-latest",
-      "gemini-3.7-flash",
-      "gemini-3.1-flash-lite",
-      "gemini-2.0-flash"
-    ];
-
     const SUPABASE_ANON_KEY_OFICIAL = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZXBsdGhjcXFzamZjZnJ1bGViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2OTg3NzAsImV4cCI6MjEwNjI3NDc3MH0.vF5BiMP6D6v09VaJj9AI674w8S2XKp1r6kR3N9XV9L4";
 
     let archivosSeleccionados = [];
     let urlsComprobantesGuardadas = [];
 
-    // 1. Guardar el objeto nativo File directamente sin dañarlo
     function manejarSeleccionArchivos(e) {
       const files = Array.from(e.target.files || []);
       files.forEach(f => {
         const reader = new FileReader();
         reader.onload = () => {
           archivosSeleccionados.push({
-            file: f, // Archivo nativo binario intacto
+            file: f,
             nombreOriginal: f.name || `foto_${Date.now()}.jpg`,
-            base64: reader.result.split(',')[1], // Únicamente para el prompt de Gemini
+            base64: reader.result.split(',')[1],
             mimeType: f.type || 'image/jpeg'
           });
           renderizarMiniaturas();
@@ -290,14 +305,15 @@
     }
 
     function vaciarFormularioCompleto() {
-      const confirmar = confirm("¿Deseas vaciar todos los campos y fotos de esta factura?");
-      if (!confirmar) return;
+      if (!confirm("¿Deseas vaciar todos los campos y fotos de esta factura?")) return;
 
       document.getElementById("txtProveedor").value = "";
       document.getElementById("txtRuc").value = "";
       document.getElementById("txtNumFactura").value = "";
       document.getElementById("txtFechaEmision").value = "";
       document.getElementById("txtComentario").value = "";
+      document.getElementById("txtDescuentoGlobal").value = "0.00";
+      document.getElementById("txtTotalFacturaImpreso").value = "";
       document.getElementById("txtEstadoPago").value = "Pendiente";
 
       archivosSeleccionados = [];
@@ -313,7 +329,6 @@
       recalcularTotales();
     }
 
-    // Conversión limpia de Base64 a Blob si hiciera falta como fallback
     function base64ToBlob(base64Data, contentType) {
       contentType = contentType || 'image/jpeg';
       const byteCharacters = atob(base64Data);
@@ -324,7 +339,6 @@
       return new Blob([byteArray], { type: contentType });
     }
 
-    // 2. Subida directa del binario puro a Supabase Storage (cero corrupción de imagen)
     async function subirComprobantesASupabase() {
       if (archivosSeleccionados.length === 0) return urlsComprobantesGuardadas;
 
@@ -345,7 +359,6 @@
         const nombreArchivo = `${Date.now()}_hoja_${i + 1}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
         const rutaEnBucket = `facturas/${nombreArchivo}`;
 
-        // Usamos directamente el objeto File nativo sin pasar por conversiones intermedias
         const archivoParaSubir = it.file ? it.file : base64ToBlob(it.base64, mime);
         const endpoint = `${urlBase}/storage/v1/object/comprobantes/${rutaEnBucket}`;
 
@@ -362,7 +375,6 @@
 
         if (!resSubida.ok) {
           const detalleErr = await resSubida.text();
-          console.error("Error al subir a Supabase:", detalleErr);
           throw new Error(`Error ${resSubida.status}: ${detalleErr}`);
         }
 
@@ -375,143 +387,67 @@
       return urlsNuevas;
     }
 
-    // Extracción con IA incluyendo fecha de caducidad
     document.getElementById("btnAnalizarMovil").addEventListener("click", async () => {
       if (archivosSeleccionados.length === 0) return;
-
-      const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
-      const rawKeys = cfg?.GEMINI_API_KEY || "";
-      const claves = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
-
-      if (claves.length === 0 || claves[0] === "TU_GEMINI_API_KEY") {
-        alert("Falta configurar GEMINI_API_KEY en config.js");
-        return;
-      }
 
       const spinner = document.getElementById("spinnerExtraccion");
       const btnAnalizar = document.getElementById("btnAnalizarMovil");
       spinner.classList.remove("hidden");
       btnAnalizar.disabled = true;
 
-      const promptSistema = `
-        Eres un auditor y clasificador experto en odontología y suministros clínicos.
-        Se te proporcionan hojas de una misma factura.
-        Consolida todos los ítems en una única lista secuencial.
-        CADUCIDAD / VENCIMIENTO: Para cada insumo, si observas fecha de vencimiento, expiración, venc, caducidad o EXP, extráela en 'fecha_caducidad' en formato exacto 'YYYY-MM-DD'. Si no figura, devuelve null.
-        DISTINCIÓN DE GASTOS: Si corresponde a flete, transporte o envío, asigna en 'categoria' el valor exacto 'Gasto Operativo'.
-        CATEGORÍAS OBLIGATORIAS: 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', 'Periodoncia & Profilaxis',
-        'Impresión & Modelos', 'Prótesis & Laboratorio', 'Instrumental & Fresas',
-        'Bioseguridad & Esterilización', 'Equipos & Repuestos', o 'General'.
-        DESCUENTOS: porcentaje en 'porcentaje_descuento' (0 a 100).
+      try {
+        const datos = await procesarFacturaConGeminiMobile(archivosSeleccionados);
 
-        Devuelve ÚNICAMENTE un JSON válido sin markdown:
-        {
-          "proveedor_nombre": "Nombre comercial",
-          "proveedor_id_fiscal": "RUC o Cédula",
-          "numero_factura": "001-001-000000001",
-          "fecha_emision": "YYYY-MM-DD",
-          "items": [
-            {
-              "descripcion": "Nombre del insumo",
-              "categoria": "General",
-              "cantidad": 1.0,
-              "precio_unitario": 0.00,
-              "porcentaje_descuento": 0.0,
-              "fecha_caducidad": "YYYY-MM-DD"
-            }
-          ]
+        if (datos.proveedor_nombre) document.getElementById("txtProveedor").value = datos.proveedor_nombre;
+        if (datos.proveedor_id_fiscal) document.getElementById("txtRuc").value = datos.proveedor_id_fiscal;
+        if (datos.numero_factura) document.getElementById("txtNumFactura").value = datos.numero_factura;
+        if (datos.fecha_emision) document.getElementById("txtFechaEmision").value = String(datos.fecha_emision).slice(0, 10);
+        
+        if (datos.total && parseFloat(datos.total) > 0) {
+          document.getElementById("txtTotalFacturaImpreso").value = parseFloat(datos.total).toFixed(2);
         }
-      `;
 
-      const requestBody = {
-        contents: [{
-          parts: [
-            { text: promptSistema },
-            ...archivosSeleccionados.map(it => ({
-              inline_data: { mime_type: it.mimeType, data: it.base64 }
-            }))
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
+        document.getElementById("txtDescuentoGlobal").value = "0.00";
+
+        const contenedorItems = document.getElementById("contenedorFilasProductos");
+        contenedorItems.innerHTML = "";
+
+        if (Array.isArray(datos.items) && datos.items.length > 0) {
+          datos.items.forEach(it => {
+            const tarifaIvaInicial = (it.tarifa_iva !== undefined && it.tarifa_iva !== null) 
+              ? String(it.tarifa_iva) 
+              : "15";
+
+            agregarLineaProducto(
+              it.descripcion,
+              it.categoria || "General",
+              it.lote || "N/A",
+              it.cantidad || 1,
+              it.precio_unitario || 0,
+              it.porcentaje_descuento || 0,
+              it.fecha_caducidad || "",
+              tarifaIvaInicial
+            );
+          });
+        } else {
+          agregarLineaProducto();
         }
-      };
 
-      let exito = false;
-      let ultimoError = null;
+        recalcularTotales();
+        await verificarFacturaDuplicada();
 
-      for (const apiKey of claves) {
-        if (exito) break;
-
-        for (const modelName of MODELOS_IA_PC) {
-          try {
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-            const res = await fetch(endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(requestBody)
-            });
-
-            if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-              ultimoError = errData.error?.message || `HTTP ${res.status}`;
-              console.warn(`Modelo ${modelName} falló:`, ultimoError);
-              continue;
-            }
-
-            const resData = await res.json();
-            const texto = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!texto) continue;
-
-            const jsonLimpio = texto.trim().replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
-            const datos = JSON.parse(jsonLimpio);
-
-            if (datos.proveedor_nombre) document.getElementById("txtProveedor").value = datos.proveedor_nombre;
-            if (datos.proveedor_id_fiscal) document.getElementById("txtRuc").value = datos.proveedor_id_fiscal;
-            if (datos.numero_factura) document.getElementById("txtNumFactura").value = datos.numero_factura;
-            if (datos.fecha_emision) document.getElementById("txtFechaEmision").value = String(datos.fecha_emision).slice(0, 10);
-
-            const contenedorItems = document.getElementById("contenedorFilasProductos");
-            contenedorItems.innerHTML = "";
-            if (Array.isArray(datos.items) && datos.items.length > 0) {
-              datos.items.forEach(it => {
-                agregarLineaProducto(
-                  it.descripcion,
-                  it.categoria || "General",
-                  it.cantidad || 1,
-                  it.precio_unitario || 0,
-                  it.porcentaje_descuento || 0,
-                  it.fecha_caducidad || ""
-                );
-              });
-            } else {
-              agregarLineaProducto();
-            }
-
-            recalcularTotales();
-            await verificarFacturaDuplicada();
-            exito = true;
-            break;
-
-          } catch (err) {
-            ultimoError = err.message;
-          }
-        }
-      }
-
-      spinner.classList.add("hidden");
-      btnAnalizar.disabled = false;
-
-      if (!exito) {
-        alert("Error de extracción: " + (ultimoError || "No se pudo comunicar con Gemini"));
+      } catch (err) {
+        alert("Error de extracción: " + err.message);
+      } finally {
+        spinner.classList.add("hidden");
+        btnAnalizar.disabled = false;
       }
     });
 
-    function agregarLineaProducto(desc = "", cat = "General", cant = 1, pu = 0.0, dcto = 0.0, caducidad = "") {
+    function agregarLineaProducto(desc = "", cat = "General", lote = "N/A", cant = 1, pu = 0.0, dcto = 0.0, caducidad = "", ivaTarifa = "15") {
       const contenedor = document.getElementById("contenedorFilasProductos");
       const div = document.createElement("div");
-      div.className = "p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2 relative";
+      div.className = "p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2 relative shadow-2xs";
 
       const opcionesCat = CATEGORIAS_SISTEMA.map(c => 
         `<option value="${c}" ${c === cat ? 'selected' : ''}>${c}</option>`
@@ -522,7 +458,7 @@
         <div>
           <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Descripción:</label>
           <input type="text" list="listaSugerenciasInsumos" value="${desc}" placeholder="Nombre del insumo" 
-                 class="item-desc w-full bg-white border border-slate-200 rounded-xl px-2 py-1 text-xs font-semibold text-slate-800">
+                 class="item-desc w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-800">
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div>
@@ -532,12 +468,26 @@
             </select>
           </div>
           <div>
-            <label class="text-[9px] font-bold text-rose-500 block mb-0.5">⏳ Caducidad (EXP):</label>
-            <input type="date" value="${caducidad ? String(caducidad).slice(0, 10) : ''}" 
-                   class="item-caducidad w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-[11px] font-semibold text-slate-700">
+            <label class="text-[9px] font-bold text-slate-500 block mb-0.5">Tarifa IVA:</label>
+            <select onchange="recalcularTotales()" class="item-iva-tarifa w-full bg-white border border-slate-200 rounded-xl px-1.5 py-1 text-[11px] font-bold text-slate-700">
+              <option value="15" ${ivaTarifa === "15" ? "selected" : ""}>15% IVA</option>
+              <option value="0" ${ivaTarifa === "0" ? "selected" : ""}>0% (Exento)</option>
+            </select>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[9px] font-bold text-slate-600 block mb-0.5">Lote:</label>
+            <input type="text" value="${lote && lote !== 'null' ? lote : 'N/A'}" placeholder="N/A" 
+                   class="item-lote w-full bg-white border border-slate-200 rounded-xl px-2 py-1 text-xs font-mono font-bold text-slate-700">
+          </div>
+          <div>
+            <label class="text-[9px] font-bold text-rose-600 block mb-0.5">⏳ Caducidad (EXP):</label>
+            <input type="date" value="${caducidad && caducidad !== 'null' ? String(caducidad).slice(0, 10) : ''}" 
+                   class="item-caducidad w-full bg-white border border-rose-300 rounded-xl px-1.5 py-1 text-[11px] font-semibold text-slate-700">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200/60">
           <div class="grid grid-cols-2 gap-1">
             <div>
               <label class="text-[9px] font-bold text-slate-400 block mb-0.5">Cant:</label>
@@ -549,8 +499,8 @@
             </div>
           </div>
           <div class="flex flex-col justify-end">
-            <div class="flex justify-between items-center text-[11px] pt-1">
-              <span class="text-slate-400">Dcto: <input type="number" step="0.1" value="${dcto}" oninput="recalcularTotales()" class="item-dcto w-11 bg-white border rounded px-1 text-center font-bold text-amber-700">%</span>
+            <div class="flex justify-between items-center text-[11px]">
+              <span class="text-slate-400">Dcto: <input type="number" step="0.1" value="${dcto}" oninput="recalcularTotales()" class="item-dcto w-10 bg-white border rounded px-1 text-center font-bold text-amber-700">%</span>
               <span class="font-black text-slate-900 item-subtotal-linea">$0.00</span>
             </div>
           </div>
@@ -562,25 +512,67 @@
     }
 
     function recalcularTotales() {
-      let subtotal = 0;
+      let subtotalBruto = 0;
+      let descuentoItems = 0;
+      let base0 = 0;
+      let base15 = 0;
+
       const divs = document.querySelectorAll("#contenedorFilasProductos > div");
 
       divs.forEach(d => {
         const cant = parseFloat(d.querySelector(".item-cant").value) || 0;
         const pu = parseFloat(d.querySelector(".item-pu").value) || 0;
         const dcto = parseFloat(d.querySelector(".item-dcto").value) || 0;
+        const tarifa = d.querySelector(".item-iva-tarifa").value;
 
-        const subLinea = (cant * pu) * (1 - (dcto / 100));
-        subtotal += subLinea;
-        d.querySelector(".item-subtotal-linea").innerText = `$${subLinea.toFixed(2)}`;
+        const subBrutoFila = cant * pu;
+        const montoDcto = subBrutoFila * (dcto / 100);
+        const subNetoFila = subBrutoFila - montoDcto;
+
+        subtotalBruto += subBrutoFila;
+        descuentoItems += montoDcto;
+
+        if (tarifa === "0") {
+          base0 += subNetoFila;
+        } else {
+          base15 += subNetoFila;
+        }
+
+        d.querySelector(".item-subtotal-linea").innerText = `$${subNetoFila.toFixed(2)}`;
       });
 
-      const iva = +(subtotal * 0.15).toFixed(2);
-      const total = +(subtotal + iva).toFixed(2);
+      const descuentoGlobal = parseFloat(document.getElementById("txtDescuentoGlobal").value) || 0;
+      const base15Final = Math.max(0, base15 - descuentoGlobal);
+      const iva = +(base15Final * 0.15).toFixed(2);
+      const totalCalculado = +(base0 + base15Final + iva).toFixed(2);
 
-      document.getElementById("lblSubtotalCalc").innerText = `$${subtotal.toFixed(2)}`;
+      document.getElementById("lblSubtotalCalc").innerText = `$${subtotalBruto.toFixed(2)}`;
+      document.getElementById("lblDctoItemsCalc").innerText = `-$${descuentoItems.toFixed(2)}`;
+      document.getElementById("lblDctoGlobalCalc").innerText = `-$${descuentoGlobal.toFixed(2)}`;
+      document.getElementById("lblBase0Calc").innerText = `$${base0.toFixed(2)}`;
+      document.getElementById("lblBase15Calc").innerText = `$${base15Final.toFixed(2)}`;
       document.getElementById("lblIvaCalc").innerText = `$${iva.toFixed(2)}`;
-      document.getElementById("lblTotalCalc").innerText = `$${total.toFixed(2)}`;
+      document.getElementById("lblTotalCalc").innerText = `$${totalCalculado.toFixed(2)}`;
+
+      const totalImpreso = parseFloat(document.getElementById("txtTotalFacturaImpreso").value) || 0;
+      const badge = document.getElementById("badgeValidacionMat");
+
+      if (totalImpreso > 0) {
+        const diff = Math.abs(totalCalculado - totalImpreso);
+        if (diff <= 0.05) {
+          badge.className = "text-[11px] font-bold p-2.5 rounded-xl text-center mt-2 bg-emerald-50 text-emerald-800 border border-emerald-300";
+          badge.innerText = `✓ Matemática cuadrada: Los productos ($${totalCalculado.toFixed(2)}) coinciden con la factura ($${totalImpreso.toFixed(2)}).`;
+        } else if (totalCalculado < totalImpreso) {
+          badge.className = "text-[11px] font-bold p-2.5 rounded-xl text-center mt-2 bg-rose-50 text-rose-800 border border-rose-300";
+          badge.innerText = `⚠️ Descuadre de -$${(totalImpreso - totalCalculado).toFixed(2)}: Los productos suman $${totalCalculado.toFixed(2)} pero la factura indica $${totalImpreso.toFixed(2)}. Revisa si el envío grava 15% IVA o si falta otra página.`;
+        } else {
+          badge.className = "text-[11px] font-bold p-2.5 rounded-xl text-center mt-2 bg-amber-50 text-amber-800 border border-amber-300";
+          badge.innerText = `⚠️ Descuadre de +$${(totalCalculado - totalImpreso).toFixed(2)}: Los productos calculados superan el total impreso ($${totalImpreso.toFixed(2)}). Revisa si hay líneas exentas de IVA.`;
+        }
+      } else {
+        badge.className = "text-[11px] font-semibold p-2.5 rounded-xl text-center mt-2 bg-slate-100 text-slate-500 border border-slate-200";
+        badge.innerText = "Ingresa el Total Oficial Impreso de la factura para auditar el cuadre.";
+      }
     }
 
     let timerDuplicado = null;
@@ -659,8 +651,10 @@
         const fechaEmision = document.getElementById("txtFechaEmision").value;
         const estadoPago = document.getElementById("txtEstadoPago").value;
         const comentario = document.getElementById("txtComentario").value.trim() || null;
-        const total = parseFloat(document.getElementById("lblTotalCalc").innerText.replace('$', '')) || 0;
-        const subtotal = parseFloat(document.getElementById("lblSubtotalCalc").innerText.replace('$', '')) || 0;
+        
+        const totalCalculado = parseFloat(document.getElementById("lblTotalCalc").innerText.replace('$', '')) || 0;
+        const totalImpreso = parseFloat(document.getElementById("txtTotalFacturaImpreso").value) || totalCalculado;
+        const subtotal = parseFloat(document.getElementById("lblBase15Calc").innerText.replace('$', '')) || 0;
         const iva = parseFloat(document.getElementById("lblIvaCalc").innerText.replace('$', '')) || 0;
 
         const facExistente = await neonQuery("SELECT id, url_factura FROM facturas WHERE proveedor_id = $1 AND numero_factura = $2 LIMIT 1;", [provId, numFactura]);
@@ -679,22 +673,22 @@
             UPDATE facturas 
             SET fecha_emision = $1, estado_pago = $2, comentario = $3, subtotal = $4, impuestos = $5, total = $6, url_factura = $7
             WHERE id = $8;
-          `, [fechaEmision, estadoPago, comentario, subtotal, iva, total, urlAUsar, facturaId]);
+          `, [fechaEmision, estadoPago, comentario, subtotal, iva, totalImpreso, urlAUsar, facturaId]);
           await neonQuery("DELETE FROM detalles_factura WHERE factura_id = $1;", [facturaId]);
         } else {
           const nuevaFac = await neonQuery(`
             INSERT INTO facturas (proveedor_id, numero_factura, fecha_emision, estado_pago, comentario, subtotal, impuestos, total, url_factura, dispositivo_origen)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Android')
             RETURNING id;
-          `, [provId, numFactura, fechaEmision, estadoPago, comentario, subtotal, iva, total, urlFinalComprobantes]);
+          `, [provId, numFactura, fechaEmision, estadoPago, comentario, subtotal, iva, totalImpreso, urlFinalComprobantes]);
           facturaId = nuevaFac[0].id;
         }
 
-        // Guardado de ítems con fecha_caducidad
         const divs = document.querySelectorAll("#contenedorFilasProductos > div");
         for (const d of divs) {
           const desc = d.querySelector(".item-desc").value.trim();
           const cat = d.querySelector(".item-cat").value;
+          const loteVal = d.querySelector(".item-lote").value.trim() || "N/A";
           const caducidadVal = d.querySelector(".item-caducidad").value || null;
           const cant = parseFloat(d.querySelector(".item-cant").value) || 1;
           const pu = parseFloat(d.querySelector(".item-pu").value) || 0;
@@ -703,13 +697,13 @@
 
           if (desc) {
             await neonQuery(`
-              INSERT INTO detalles_factura (factura_id, descripcion, categoria, cantidad, precio_unitario, porcentaje_descuento, precio_total, fecha_caducidad)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
-            `, [facturaId, desc, cat, cant, pu, dcto, sub, caducidadVal]);
+              INSERT INTO detalles_factura (factura_id, descripcion, categoria, lote, cantidad, precio_unitario, porcentaje_descuento, precio_total, fecha_caducidad)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+            `, [facturaId, desc, cat, loteVal, cant, pu, dcto, sub, caducidadVal]);
           }
         }
 
-        alert("¡Factura archivada y comprobante vinculado con éxito!");
+        alert("¡Factura archivada y auditada con éxito!");
         window.location.href = "dashboard.html";
 
       } catch (err) {

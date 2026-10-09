@@ -1,44 +1,39 @@
 import os
-import re
 import sys
-import socket
-import getpass
-import asyncio
-import traceback
-from datetime import datetime, date
+import io
+import csv
+import logging
 from typing import List, Optional
-from contextlib import asynccontextmanager
+from datetime import datetime, date
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, desc, text
+from sqlalchemy import func, desc, or_
 from dotenv import load_dotenv
 
-if getattr(sys, "frozen", False):
-    BASE_DIR = sys._MEIPASS
-else:
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-env_path = os.path.join(BASE_DIR, ".env")
+# Cargar .env tanto en local como dentro del paquete empaquetado
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+env_path = os.path.join(base_dir, ".env")
 if os.path.exists(env_path):
     load_dotenv(env_path)
 else:
     load_dotenv()
 
-from app.database import get_db, engine, Base, inicializar_base_de_datos
-from app import models
-from app.services.storage import subir_comprobante_a_nube
-from app.ai_extractor import procesar_documentos_factura
+from app.database import engine, get_db, Base
+from app.models import Factura, DetalleFactura, Proveedor, ProductoPVP, VentaPOS, DetalleVentaPOS
+from app.ai_extractor import extraer_datos_factura
+from app.storage import subir_archivo_supabase
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    asyncio.create_task(asyncio.to_thread(inicializar_base_de_datos))
-    yield
+Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Mobadent Invoices API", lifespan=lifespan)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("mobadent-api")
+
+app = FastAPI(title="Mobadent ERP & POS", version="2.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,739 +43,708 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-if os.path.exists(FRONTEND_DIR):
-    app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+PALABRAS_FLETE = ["flete", "envio", "envío", "transporte", "flete local", "guia", "guía"]
 
-@app.get("/")
-def raiz():
-    return RedirectResponse(url="/frontend/dashboard.html")
+class ItemDetalleIn(BaseModel):
+    descripcion: str
+    categoria: Optional[str] = "General"
+    lote: Optional[str] = "N/A"
+    cantidad: float = 1.0
+    precio_unitario: float = 0.0
+    porcentaje_descuento: Optional[float] = 0.0
+    precio_total: Optional[float] = 0.0
+    fecha_caducidad: Optional[str] = None
+    producto_pvp_id: Optional[int] = None
 
-def normalizar_nombre(texto: str) -> str:
-    texto = texto.lower().strip()
-    texto = re.sub(r'\s+', ' ', texto)
-    return texto[:240]
+class FacturaCrearIn(BaseModel):
+    proveedor: str
+    numero_factura: str
+    fecha_emision: Optional[str] = None
+    total: float
+    subtotal: Optional[float] = 0.0
+    impuestos: Optional[float] = 0.0
+    estado_pago: Optional[str] = "Pendiente"
+    comentario: Optional[str] = ""
+    url_factura: Optional[str] = ""
+    items: List[ItemDetalleIn] = []
+    impactar_stock_pvp: Optional[bool] = False
 
-def limpiar_float(val, default: float = 0.0) -> float:
-    if val is None:
-        return default
-    if isinstance(val, (int, float)):
-        return float(val)
-    txt = str(val).strip().replace("$", "").replace(",", ".")
-    if not txt:
-        return default
-    try:
-        return float(txt)
-    except (ValueError, TypeError):
-        return default
+class EstadoPagoUpdate(BaseModel):
+    estado_pago: Optional[str] = None
+    comentario: Optional[str] = None
 
-def limpiar_fecha(val) -> Optional[date]:
-    if not val:
-        return None
-    val_str = str(val).strip()
-    if val_str.lower() in ["", "null", "none", "n/a", "s/f"]:
-        return None
-    try:
-        return datetime.strptime(val_str[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        return None
+class CategoriaUpdate(BaseModel):
+    descripcion: str
+    nueva_categoria: str
 
-def identificar_dispositivo_local() -> str:
-    usuario_env = os.getenv("DEVICE_IDENTIFIER") or os.getenv("CLINICA_USUARIO")
-    if usuario_env:
-        return usuario_env.strip()
-    try:
-        user = getpass.getuser()
-        return user.capitalize()
-    except Exception:
-        return "Usuario"
+class ItemSincronizacion(BaseModel):
+    descripcion: str
+    cantidad: float
+    precio_unitario: float
+    codigo_barras: Optional[str] = None
+    categoria: Optional[str] = "General"
 
+class SyncFacturaStockPayload(BaseModel):
+    items: List[ItemSincronizacion]
 
-# ==============================================================
-# VERSIÓN LOCAL OFICIAL DE ESCRITORIO
-# ==============================================================
-VERSION_LOCAL_DESKTOP_CODIGO = 6
-VERSION_LOCAL_DESKTOP_NOMBRE = "1.6.0"
+class LineaVentaIn(BaseModel):
+    producto_id: Optional[int] = None
+    cantidad: float = 1.0
+    precio_unitario: float = 0.0
+    total: float = 0.0
 
-@app.get("/api/sistema/info")
-def obtener_info_sistema():
-    return {
-        "version_codigo": VERSION_LOCAL_DESKTOP_CODIGO,
-        "version_nombre": VERSION_LOCAL_DESKTOP_NOMBRE,
-        "app_nombre": "Mobadent Invoices"
-    }
+class VentaCobroIn(BaseModel):
+    metodo_pago: str = "Cash"
+    monto_recibido: float = 0.0
+    cambio: float = 0.0
+    subtotal: float = 0.0
+    impuestos: float = 0.0
+    total: float = 0.0
+    items: List[LineaVentaIn] = []
 
-@app.get("/api/actualizaciones/comprobar")
-def comprobar_actualizacion_desktop(db: Session = Depends(get_db)):
-    try:
-        sql = text("""
-            SELECT version_codigo, version_nombre, novedades, url_apk, es_obligatoria
-            FROM app_versiones
-            WHERE plataforma = 'desktop'
-            ORDER BY version_codigo DESC
-            LIMIT 1;
-        """)
-        resultado = db.execute(sql).fetchone()
-        
-        if not resultado:
-            return {"hay_actualizacion": False}
-        
-        v_codigo, v_nombre, novedades, url_descarga, es_obligatoria = resultado
-        
-        if int(v_codigo) > VERSION_LOCAL_DESKTOP_CODIGO:
-            return {
-                "hay_actualizacion": True,
-                "version_servidor": v_nombre,
-                "codigo_servidor": v_codigo,
-                "novedades": novedades,
-                "url_descarga": url_descarga,
-                "es_obligatoria": bool(es_obligatoria)
-            }
-        
-        return {"hay_actualizacion": False}
-    except Exception as e:
-        print("Aviso al comprobar actualización de escritorio:", e)
-        return {"hay_actualizacion": False}
+class VentaEditarIn(BaseModel):
+    metodo_pago: Optional[str] = None
+    monto_recibido: Optional[float] = None
+    cambio: Optional[float] = None
 
-
-# ==========================================
-# ENDPOINT DE ANÁLISIS MULTI-HOJA CON IA Y SUBIDA A SUPABASE
-# ==========================================
-@app.post("/api/facturas/analizar")
-async def analizar_factura_con_ia(files: List[UploadFile] = File(...)):
-    try:
-        archivos = []
-        urls_subidas = []
-
-        for f in files:
-            contenido = await f.read()
-            mime = f.content_type or "application/octet-stream"
-            archivos.append((contenido, mime))
-
-            try:
-                url_s = subir_comprobante_a_nube(contenido, f.filename, carpeta="facturas")
-                if url_s:
-                    urls_subidas.append(url_s)
-            except Exception as err_s:
-                print(f"Aviso al subir hoja a Supabase: {err_s}")
-
-        resultado_ia = await procesar_documentos_factura(archivos)
-        datos = resultado_ia.model_dump()
-        datos["url_factura"] = ",".join(urls_subidas) if urls_subidas else None
-
-        # ==========================================
-        # 🔍 DIAGNÓSTICO EN CONSOLA (MIRA TU TERMINAL)
-        # ==========================================
-        print("\n" + "="*50)
-        print(">>> RESPUESTA PURA DE GEMINI A LOS ITEMS:")
-        for idx, item in enumerate(datos.get("items", [])):
-            print(f"[{idx+1}] {item.get('descripcion')} | Lote: {item.get('lote')} | Caducidad: {item.get('fecha_caducidad')}")
-        print("="*50 + "\n")
-
-        return datos
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"Error procesando factura con IA:\n{tb}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"{str(e)}\n\nDetalle técnico:\n{tb}"
-        )
-
-# ==========================================
-# VERIFICACIÓN DE FACTURA DUPLICADA EN VIVO
-# ==========================================
-@app.get("/api/facturas/verificar-duplicado")
-def verificar_factura_duplicada(
-    numero_factura: str = Query(..., min_length=1),
-    proveedor_ruc: Optional[str] = Query(None),
-    proveedor_nombre: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+# ---------------------------------------------------------
+# FACTURAS Y EXTRACCIÓN
+# ---------------------------------------------------------
+@app.post("/api/facturas/extraer")
+async def procesar_extraccion_factura(
+    files: Optional[List[UploadFile]] = File(None),
+    file: Optional[UploadFile] = File(None)
 ):
-    num_limpio = numero_factura.strip()
-    if not num_limpio:
-        return {"existe": False}
+    lista_archivos = []
+    if files:
+        lista_archivos.extend(files)
+    if file:
+        lista_archivos.append(file)
 
-    query = (
-        db.query(models.Factura)
-        .join(models.Proveedor, models.Factura.proveedor_id == models.Proveedor.id)
-        .filter(func.trim(models.Factura.numero_factura).ilike(f"%{num_limpio}%"))
-    )
+    if not lista_archivos:
+        raise HTTPException(status_code=400, detail="No se enviaron archivos válidos para procesar.")
 
-    if proveedor_ruc and proveedor_ruc.strip() not in ["", "9999999999999", "N/A"]:
-        query = query.filter(models.Proveedor.identificacion_fiscal == proveedor_ruc.strip())
-    elif proveedor_nombre and proveedor_nombre.strip():
-        query = query.filter(models.Proveedor.nombre.ilike(f"%{proveedor_nombre.strip()}%"))
-
-    factura_existente = query.first()
-
-    if factura_existente:
-        return {
-            "existe": True,
-            "id": factura_existente.id,
-            "numero_factura": factura_existente.numero_factura,
-            "proveedor": factura_existente.proveedor.nombre if factura_existente.proveedor else "Proveedor Registrado",
-            "fecha_emision": factura_existente.fecha_emision.isoformat() if factura_existente.fecha_emision else "S/F",
-            "total": float(factura_existente.total or 0.0)
-        }
-
-    return {"existe": False}
-
-
-# ==========================================
-# GUARDADO DE FACTURAS CON RESPALDO DE TOTAL
-# ==========================================
-@app.post("/api/facturas/guardar")
-@app.post("/api/facturas")
-def guardar_factura(payload: dict, db: Session = Depends(get_db)):
     try:
-        nombre_prov = str(payload.get("proveedor_nombre") or "").strip() or "Proveedor General"
-        ruc_prov = str(
-            payload.get("proveedor_id_fiscal") 
-            or payload.get("proveedor_ruc") 
-            or "9999999999999"
-        ).strip()
-        num_factura = str(payload.get("numero_factura") or "").strip()
+        resultado = await extraer_datos_factura(lista_archivos)
+        return resultado
+    except Exception as e:
+        logger.error(f"Error procesando factura con IA: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fallo en motor de extracción: {str(e)}")
 
-        if not num_factura:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
-                detail="El número de comprobante/factura es obligatorio."
-            )
-
-        proveedor = db.query(models.Proveedor).filter(
-            models.Proveedor.identificacion_fiscal == ruc_prov
-        ).first()
-
-        if not proveedor:
-            proveedor = models.Proveedor(nombre=nombre_prov, identificacion_fiscal=ruc_prov)
-            db.add(proveedor)
+@app.post("/api/facturas/guardar")
+def guardar_factura_completa(datos: FacturaCrearIn, db: Session = Depends(get_db)):
+    try:
+        nombre_prov = datos.proveedor.strip()
+        prov = db.query(Proveedor).filter(func.lower(Proveedor.nombre) == nombre_prov.lower()).first()
+        if not prov:
+            prov = Proveedor(nombre=nombre_prov)
+            db.add(prov)
             db.flush()
-        elif nombre_prov and (not proveedor.nombre or proveedor.nombre == "Proveedor General"):
-            proveedor.nombre = nombre_prov
 
-        fecha_emision = date.today()
-        f_raw = payload.get("fecha_emision")
-        if f_raw:
+        fecha_val = None
+        if datos.fecha_emision:
             try:
-                fecha_emision = datetime.strptime(str(f_raw)[:10], "%Y-%m-%d").date()
-            except ValueError:
-                pass
+                fecha_val = datetime.strptime(datos.fecha_emision[:10], "%Y-%m-%d").date()
+            except Exception:
+                fecha_val = None
 
-        b0 = limpiar_float(payload.get("base_iva_0"))
-        bg = limpiar_float(payload.get("base_iva_grabada"))
-        subt = limpiar_float(payload.get("subtotal"), default=bg)
-        iva = limpiar_float(payload.get("impuestos") or payload.get("iva"))
-        tot = limpiar_float(payload.get("total"))
+        nueva_fac = Factura(
+            proveedor_id=prov.id,
+            numero_factura=datos.numero_factura.strip(),
+            fecha_emision=fecha_val,
+            total=datos.total,
+            subtotal=datos.subtotal,
+            impuestos=datos.impuestos,
+            estado_pago=datos.estado_pago or "Pendiente",
+            comentario=datos.comentario or "",
+            url_factura=datos.url_factura or ""
+        )
+        db.add(nueva_fac)
+        db.flush()
 
-        items_payload = payload.get("items", [])
-        if tot <= 0.0 and len(items_payload) > 0:
-            subt_calc = sum(
-                limpiar_float(it.get("cantidad", 1)) * limpiar_float(it.get("precio_unitario", 0)) * (1 - (limpiar_float(it.get("porcentaje_descuento", 0)) / 100.0))
-                for it in items_payload
-            )
-            subt = subt_calc
-            iva = round(subt * 0.15, 2)
-            tot = round(subt + iva, 2)
+        for item in datos.items:
+            f_cad = None
+            if item.fecha_caducidad:
+                try:
+                    f_cad = datetime.strptime(item.fecha_caducidad[:10], "%Y-%m-%d").date()
+                except Exception:
+                    f_cad = None
 
-        dispositivo_reg = payload.get("dispositivo_origen") or identificar_dispositivo_local()
+            # Cálculo financiero: Costo Unitario Neto Real aplicando el % de Descuento
+            desc_pct = float(item.porcentaje_descuento or 0.0)
+            factor_desc = 1.0 - (desc_pct / 100.0)
+            costo_unitario_neto = round(float(item.precio_unitario) * factor_desc, 2)
 
-        factura = db.query(models.Factura).filter(
-            models.Factura.proveedor_id == proveedor.id,
-            models.Factura.numero_factura == num_factura
-        ).first()
+            total_linea = item.precio_total
+            if not total_linea or total_linea == 0:
+                total_linea = round(float(item.cantidad) * costo_unitario_neto, 2)
 
-        if factura:
-            factura.numero_autorizacion = payload.get("numero_autorizacion") or None
-            factura.fecha_emision = fecha_emision
-            factura.estado_pago = payload.get("estado_pago") or "Pendiente"
-            factura.comentario = payload.get("comentario") or None
-            factura.base_iva_0 = b0
-            factura.base_iva_grabada = bg
-            factura.porcentaje_iva = limpiar_float(payload.get("porcentaje_iva"), 15.0)
-            factura.descuento_total = limpiar_float(payload.get("descuento_total"))
-            factura.subtotal = subt
-            factura.impuestos = iva
-            factura.total = tot
-            factura.dispositivo_origen = dispositivo_reg
-            if payload.get("url_factura"):
-                factura.url_factura = payload.get("url_factura")
-            
-            db.query(models.DetalleFactura).filter(models.DetalleFactura.factura_id == factura.id).delete()
-        else:
-            factura = models.Factura(
-                proveedor_id=proveedor.id,
-                numero_factura=num_factura,
-                numero_autorizacion=payload.get("numero_autorizacion") or None,
-                fecha_emision=fecha_emision,
-                estado_pago=payload.get("estado_pago") or "Pendiente",
-                comentario=payload.get("comentario") or None,
-                dispositivo_origen=dispositivo_reg,
-                base_iva_0=b0,
-                base_iva_grabada=bg,
-                porcentaje_iva=limpiar_float(payload.get("porcentaje_iva"), 15.0),
-                descuento_total=limpiar_float(payload.get("descuento_total")),
-                subtotal=subt,
-                impuestos=iva,
-                total=tot,
-                url_factura=payload.get("url_factura") or None
-            )
-            db.add(factura)
-            db.flush()
+            nombre_item_limpio = " ".join(item.descripcion.strip().split())
+            desc_lower = nombre_item_limpio.lower()
+            cat_lower = (item.categoria or "").strip().lower()
+            es_gasto = cat_lower == "gasto operativo" or any(p in desc_lower for p in PALABRAS_FLETE)
 
-        catalogo_procesado_en_factura = set()
-
-        for item in items_payload:
-            desc_raw = str(item.get("descripcion") or "").strip()
-            if not desc_raw:
-                continue
-
-            cat_enviada = str(item.get("categoria") or "").strip()
-            if not cat_enviada:
-                cat_enviada = "General"
-
-            es_gasto = cat_enviada.lower() in ["gasto operativo", "envio", "flete", "gasto", "transporte", "servicio"]
-
-            if es_gasto:
-                cat_final = "Gasto Operativo"
-            else:
-                cat_final = cat_enviada
-                desc_norm = normalizar_nombre(desc_raw)
-
-                cat_db = db.query(models.CatalogoInsumo).filter(
-                    models.CatalogoInsumo.descripcion_normalizada == desc_norm
+            prod_pvp = None
+            if not es_gasto:
+                prod_pvp = db.query(ProductoPVP).filter(
+                    func.lower(func.trim(ProductoPVP.nombre)) == desc_lower
                 ).first()
 
-                if cat_db:
-                    if cat_final != "General" or cat_db.categoria == "General":
-                        cat_db.categoria = cat_final
+                if datos.impactar_stock_pvp:
+                    cant_u = float(item.cantidad)
+                    if prod_pvp:
+                        # 1. Sumar existencias físicas al mostrador
+                        prod_pvp.stock_actual = float(prod_pvp.stock_actual or 0) + cant_u
+                        
+                        # 2. Actualizar el costo referencial al costo NETO REAL pagado
+                        if costo_unitario_neto > 0:
+                            prod_pvp.costo_referencial = costo_unitario_neto
+                            # Si no tenía PVP o el PVP era inferior al costo, sugerir 35% de margen
+                            if float(prod_pvp.pvp or 0) <= costo_unitario_neto:
+                                prod_pvp.pvp = round(costo_unitario_neto * 1.35, 2)
                     else:
-                        cat_final = cat_db.categoria
-                else:
-                    if desc_norm not in catalogo_procesado_en_factura:
-                        nuevo_insumo = models.CatalogoInsumo(
-                            descripcion_normalizada=desc_norm,
-                            categoria=cat_final
+                        # Producto nuevo: PVP sugerido calculado sobre el costo real neto
+                        pvp_sug = round(costo_unitario_neto * 1.35, 2) if costo_unitario_neto > 0 else 0.0
+                        prod_pvp = ProductoPVP(
+                            nombre=nombre_item_limpio,
+                            categoria=item.categoria or "General",
+                            stock_actual=cant_u,
+                            costo_referencial=costo_unitario_neto,
+                            pvp=pvp_sug
                         )
-                        db.add(nuevo_insumo)
-                        catalogo_procesado_en_factura.add(desc_norm)
+                        db.add(prod_pvp)
+                        db.flush()
 
-            cant = limpiar_float(item.get("cantidad"), default=1.0)
-            pu = limpiar_float(item.get("precio_unitario"))
-            dcto = limpiar_float(item.get("porcentaje_descuento"))
-            pt = limpiar_float(item.get("subtotal") or item.get("precio_total"), default=(cant * pu * (1 - (dcto / 100.0))))
-            lote_txt = str(item.get("lote") or "N/A").strip()
-            fecha_cad = limpiar_fecha(item.get("fecha_caducidad"))
-
-            detalle_kwargs = {
-                "factura_id": factura.id,
-                "descripcion": desc_raw[:450],
-                "categoria": cat_final,
-                "lote": lote_txt,
-                "cantidad": cant,
-                "precio_unitario": pu,
-                "porcentaje_descuento": dcto,
-                "precio_total": pt
-            }
-            if hasattr(models.DetalleFactura, "fecha_caducidad"):
-                detalle_kwargs["fecha_caducidad"] = fecha_cad
-
-            db.add(models.DetalleFactura(**detalle_kwargs))
+            det = DetalleFactura(
+                factura_id=nueva_fac.id,
+                descripcion=nombre_item_limpio,
+                categoria=item.categoria or "General",
+                lote=item.lote or "N/A",
+                cantidad=item.cantidad,
+                precio_unitario=item.precio_unitario,
+                porcentaje_descuento=desc_pct,
+                precio_total=total_linea,
+                fecha_caducidad=f_cad,
+                producto_pvp_id=prod_pvp.id if prod_pvp else None
+            )
+            db.add(det)
 
         db.commit()
-        db.refresh(factura)
-        return {"mensaje": "Factura guardada exitosamente", "id": factura.id}
+        return {"status": "ok", "factura_id": nueva_fac.id, "mensaje": "Factura guardada correctamente"}
 
-    except HTTPException:
-        db.rollback()
-        raise
     except Exception as e:
         db.rollback()
-        tb = traceback.format_exc()
-        print(f"Error en guardar_factura:\n{tb}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fallo al registrar en base de datos: {str(e)}"
-        )
-
-
-# ==========================================
-# GESTIÓN Y SUBIDA DE COMPROBANTES POST-REGISTRO
-# ==========================================
-@app.patch("/api/facturas/{factura_id}/subir-archivo")
-async def adjuntar_archivo_a_factura(
-    factura_id: int, 
-    files: List[UploadFile] = File(...), 
-    db: Session = Depends(get_db)
-):
-    factura = db.query(models.Factura).filter(models.Factura.id == factura_id).first()
-    if not factura:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
-
-    urls_existentes = [u.strip() for u in (factura.url_factura or "").split(",") if u.strip()]
-
-    for f in files:
-        contenido = await f.read()
-        url_nueva = subir_comprobante_a_nube(contenido, f.filename, carpeta="facturas")
-        if url_nueva:
-            urls_existentes.append(url_nueva)
-        else:
-            raise HTTPException(status_code=500, detail="Error al subir el archivo a Supabase Storage.")
-
-    factura.url_factura = ",".join(urls_existentes)
-    db.commit()
-    db.refresh(factura)
-    return {"mensaje": "Comprobante(s) vinculado(s) exitosamente", "url_factura": factura.url_factura}
-
-
-# ==========================================
-# ENDPOINTS ANALÍTICOS Y LISTADOS
-# ==========================================
-@app.get("/api/analitica/flujo-caja")
-def analitica_flujo_caja(db: Session = Depends(get_db)):
-    try:
-        hace_un_ano = date.today().replace(year=date.today().year - 1)
-        periodo_expr = func.to_char(models.Factura.fecha_emision, 'YYYY-MM')
-
-        flujo = (
-            db.query(
-                periodo_expr.label("periodo"),
-                func.coalesce(func.sum(models.Factura.total), 0.0).label("monto"),
-                func.count(models.Factura.id).label("cantidad_facturas")
-            )
-            .filter(
-                models.Factura.fecha_emision.isnot(None),
-                models.Factura.fecha_emision >= hace_un_ano
-            )
-            .group_by(periodo_expr)
-            .order_by(periodo_expr)
-            .all()
-        )
-
-        historico = [
-            {
-                "periodo": str(f.periodo),
-                "monto": float(f.monto or 0.0),
-                "cantidad_facturas": int(f.cantidad_facturas or 0)
-            }
-            for f in flujo
-        ]
-        promedio = sum(item["monto"] for item in historico) / len(historico) if historico else 0.0
-
-        return {"historico": historico, "promedio_mensual": float(promedio)}
-    except Exception as e:
-        print(f"Error en analitica_flujo_caja: {e}")
-        return {"historico": [], "promedio_mensual": 0.0}
-
+        logger.error(f"Error registrando factura: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fallo al registrar en base de datos: {str(e)}")
 
 @app.get("/api/facturas/listado")
-def listar_facturas_listado(db: Session = Depends(get_db)):
-    try:
-        facturas_db = (
-            db.query(models.Factura)
-            .options(joinedload(models.Factura.proveedor), joinedload(models.Factura.items))
-            .order_by(desc(models.Factura.fecha_emision))
-            .all()
-        )
-
-        resultado = []
-        for f in facturas_db:
-            items_formateados = []
-            for it in (f.items or []):
-                cad_val = getattr(it, 'fecha_caducidad', None)
-                cad_str = cad_val.isoformat() if isinstance(cad_val, (date, datetime)) else (str(cad_val) if cad_val else None)
-                
-                items_formateados.append({
-                    "id": it.id,
-                    "descripcion": it.descripcion,
-                    "categoria": it.categoria or "General",
-                    "cantidad": float(it.cantidad or 0.0),
-                    "precio_unitario": float(it.precio_unitario or 0.0),
-                    "subtotal": float(it.precio_total or 0.0),
-                    "precio_total": float(it.precio_total or 0.0),
-                    "porcentaje_descuento": float(getattr(it, 'porcentaje_descuento', 0.0) or 0.0),
-                    "lote": getattr(it, 'lote', 'N/A') or 'N/A',
-                    "fecha_caducidad": cad_str
-                })
-
-            resultado.append({
-                "id": f.id,
-                "proveedor_nombre": f.proveedor.nombre if f.proveedor else "Sin Proveedor",
-                "proveedor_ruc": f.proveedor.identificacion_fiscal if f.proveedor else "N/A",
-                "proveedor": f.proveedor.nombre if f.proveedor else "Sin Proveedor",
-                "numero_factura": f.numero_factura,
-                "numero_autorizacion": f.numero_autorizacion,
-                "fecha_emision": f.fecha_emision.isoformat() if f.fecha_emision else None,
-                "created_at": f.created_at.strftime("%d/%m/%Y %H:%M") if getattr(f, "created_at", None) else None,
-                "dispositivo_origen": getattr(f, "dispositivo_origen", "Local") or "Local",
-                "subtotal": float(f.subtotal or 0.0),
-                "descuento_total": float(f.descuento_total or 0.0),
-                "base_iva_grabada": float(f.base_iva_grabada or f.subtotal or 0.0),
-                "iva": float(f.impuestos or 0.0),
-                "impuestos": float(f.impuestos or 0.0),
-                "total": float(f.total or 0.0),
-                "estado_pago": f.estado_pago or "Pendiente",
-                "metodo_pago": f.metodo_pago,
-                "fecha_pago": f.fecha_pago.isoformat() if f.fecha_pago else None,
-                "comentario": f.comentario or "",
-                "items_count": len(f.items) if f.items else 0,
-                "url_factura": f.url_factura,
-                "url_comprobante_pago": f.url_comprobante_pago,
-                "items": items_formateados
-            })
-
-        return resultado
-    except Exception as e:
-        print(f"Error en listar_facturas_listado: {e}")
-        return []
-
-
-@app.get("/api/productos/catalogo-maestro")
-@app.get("/api/catalogo/maestro")
-@app.get("/api/insumos/catalogo")
-def obtener_catalogo_maestro(db: Session = Depends(get_db)):
-    try:
-        facturas = (
-            db.query(models.Factura)
-            .options(joinedload(models.Factura.proveedor), joinedload(models.Factura.items))
-            .filter(models.Factura.fecha_emision.isnot(None))
-            .order_by(desc(models.Factura.fecha_emision))
-            .all()
-        )
-
-        agrupados = {}
-        for fac in facturas:
-            prov_nombre = fac.proveedor.nombre if fac.proveedor else "Proveedor Desconocido"
-            f_emision_txt = fac.fecha_emision.isoformat()
-            num_fac = fac.numero_factura or "N/A"
-
-            for d in (fac.items or []):
-                if str(d.categoria or "").strip().lower() == "gasto operativo":
-                    continue
-
-                prod_nombre = str(d.descripcion or "").strip()
-                if not prod_nombre:
-                    continue
-
-                if prod_nombre not in agrupados:
-                    agrupados[prod_nombre] = {
-                        "categoria": d.categoria or "General",
-                        "compras": []
-                    }
-                else:
-                    if d.categoria and d.categoria != "General":
-                        agrupados[prod_nombre]["categoria"] = d.categoria
-
-                dcto_val = float(getattr(d, 'porcentaje_descuento', 0.0) or 0.0)
-                lote_val = getattr(d, 'lote', 'N/A') or 'N/A'
-                cad_val = getattr(d, 'fecha_caducidad', None)
-                cad_str = cad_val.isoformat() if isinstance(cad_val, (date, datetime)) else (str(cad_val) if cad_val else None)
-
-                agrupados[prod_nombre]["compras"].append({
-                    "fecha": f_emision_txt,
-                    "numero_factura": num_fac,
-                    "proveedor": prov_nombre,
-                    "lote": lote_val,
-                    "fecha_caducidad": cad_str,
-                    "cantidad": float(d.cantidad or 0.0),
-                    "precio_unitario": float(d.precio_unitario or 0.0),
-                    "porcentaje_descuento": dcto_val,
-                    "subtotal": float(d.precio_total or 0.0)
-                })
-
-        resultado = []
-        for prod_nombre, data in agrupados.items():
-            hist = data["compras"]
-            cat_actual = data["categoria"]
-
-            precios = [h["precio_unitario"] for h in hist if h["precio_unitario"] > 0]
-            if not precios:
-                precios = [0.0]
-
-            p_min = min(precios)
-            p_max = max(precios)
-            p_prom = sum(precios) / len(precios)
-            ultimo_p = hist[0]["precio_unitario"]
-
-            proveedores_set = list({h["proveedor"] for h in hist})
-            compra_min = next((h for h in hist if h["precio_unitario"] == p_min), hist[0])
-            mejor_prov = compra_min["proveedor"]
-
-            resultado.append({
-                "producto": prod_nombre,
-                "nombre": prod_nombre,
-                "descripcion": prod_nombre,
-                "categoria": cat_actual,
-                "proveedores": proveedores_set,
-                "mejor_proveedor": mejor_prov,
-                "total_compras": len(hist),
-                "unidades_totales": sum(h["cantidad"] for h in hist),
-                "ultimo_precio": float(ultimo_p),
-                "precio_min": float(p_min),
-                "precio_max": float(p_max),
-                "precio_promedio": round(float(p_prom), 2),
-                "historial": hist
-            })
-
-        resultado.sort(key=lambda x: x["producto"].lower())
-        return resultado
-    except Exception as e:
-        print(f"Error generando catálogo maestro: {e}")
-        return []
-
-
-@app.get("/api/productos/buscar")
-def buscar_productos(q: str = Query("", min_length=1), db: Session = Depends(get_db)):
-    try:
-        query_txt = q.strip().lower()
-        catalogo = obtener_catalogo_maestro(db)
-
-        if not query_txt:
-            return {"total_coincidencias": 0, "productos_agrupados": []}
-
-        coincidencias = [
-            p for p in catalogo 
-            if query_txt in p["producto"].lower() 
-            or any(query_txt in prov.lower() for prov in p["proveedores"])
-        ]
-
-        return {
-            "total_coincidencias": len(coincidencias),
-            "productos_agrupados": coincidencias
-        }
-    except Exception as e:
-        print(f"Error en buscar_productos: {e}")
-        return {"total_coincidencias": 0, "productos_agrupados": []}
-
-
-@app.get("/api/catalogo/sugerencias")
-def sugerencias_catalogo(q: str = Query("", min_length=1), db: Session = Depends(get_db)):
-    termino = q.strip().lower()
-    if not termino:
-        return []
-
-    coincidencias = (
-        db.query(models.CatalogoInsumo)
-        .filter(
-            models.CatalogoInsumo.categoria != "Gasto Operativo",
-            models.CatalogoInsumo.descripcion_normalizada.ilike(f"%{termino}%")
-        )
-        .limit(10)
+def listar_facturas(db: Session = Depends(get_db)):
+    facturas = (
+        db.query(Factura)
+        .options(joinedload(Factura.detalles), joinedload(Factura.proveedor_rel))
+        .order_by(desc(Factura.fecha_emision), desc(Factura.id))
         .all()
     )
+    resultado = []
+    for f in facturas:
+        prov_nombre = f.proveedor_rel.nombre if f.proveedor_rel else "Proveedor Desconocido"
+        items_list = []
+        for d in f.detalles:
+            items_list.append({
+                "id": d.id,
+                "descripcion": d.descripcion,
+                "categoria": d.categoria or "General",
+                "lote": d.lote or "N/A",
+                "cantidad": float(d.cantidad or 0),
+                "precio_unitario": float(d.precio_unitario or 0),
+                "porcentaje_descuento": float(d.porcentaje_descuento or 0),
+                "precio_total": float(d.precio_total or 0),
+                "fecha_caducidad": d.fecha_caducidad.isoformat() if d.fecha_caducidad else None,
+                "producto_pvp_id": d.producto_pvp_id
+            })
+        resultado.append({
+            "id": f.id,
+            "numero_factura": f.numero_factura,
+            "fecha_emision": f.fecha_emision.isoformat() if f.fecha_emision else None,
+            "total": float(f.total or 0),
+            "subtotal": float(f.subtotal or 0),
+            "impuestos": float(f.impuestos or 0),
+            "estado_pago": f.estado_pago or "Pendiente",
+            "comentario": f.comentario or "",
+            "url_factura": f.url_factura or "",
+            "proveedor": prov_nombre,
+            "items": items_list
+        })
+    return resultado
 
-    return [
-        {
-            "descripcion": c.descripcion_normalizada.title(),
-            "categoria": c.categoria
-        }
-        for c in coincidencias
-    ]
+@app.patch("/api/facturas/{id}/estado-pago")
+def cambiar_estado_o_nota(id: int, payload: EstadoPagoUpdate, db: Session = Depends(get_db)):
+    fac = db.query(Factura).filter(Factura.id == id).first()
+    if not fac:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if payload.estado_pago is not None:
+        fac.estado_pago = payload.estado_pago
+    if payload.comentario is not None:
+        fac.comentario = payload.comentario
+    db.commit()
+    return {"status": "ok", "factura_id": fac.id}
 
+@app.put("/api/facturas/{id}")
+def actualizar_factura_completa(id: int, payload: FacturaCrearIn, db: Session = Depends(get_db)):
+    fac = db.query(Factura).filter(Factura.id == id).first()
+    if not fac:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    try:
+        prov = db.query(Proveedor).filter(func.lower(Proveedor.nombre) == payload.proveedor.strip().lower()).first()
+        if not prov:
+            prov = Proveedor(nombre=payload.proveedor.strip())
+            db.add(prov)
+            db.flush()
+
+        fecha_val = None
+        if payload.fecha_emision:
+            try:
+                fecha_val = datetime.strptime(payload.fecha_emision[:10], "%Y-%m-%d").date()
+            except Exception:
+                fecha_val = None
+
+        fac.proveedor_id = prov.id
+        fac.numero_factura = payload.numero_factura.strip()
+        fac.fecha_emision = fecha_val
+        fac.total = payload.total
+        fac.subtotal = payload.subtotal
+        fac.impuestos = payload.impuestos
+        if payload.estado_pago:
+            fac.estado_pago = payload.estado_pago
+        if payload.comentario is not None:
+            fac.comentario = payload.comentario
+
+        db.query(DetalleFactura).filter(DetalleFactura.factura_id == fac.id).delete()
+        for item in payload.items:
+            f_cad = None
+            if item.fecha_caducidad:
+                try:
+                    f_cad = datetime.strptime(item.fecha_caducidad[:10], "%Y-%m-%d").date()
+                except Exception:
+                    f_cad = None
+
+            desc_pct = float(item.porcentaje_descuento or 0.0)
+            factor_desc = 1.0 - (desc_pct / 100.0)
+            costo_neto = round(float(item.precio_unitario) * factor_desc, 2)
+            total_linea = item.precio_total or round(float(item.cantidad) * costo_neto, 2)
+
+            det = DetalleFactura(
+                factura_id=fac.id,
+                descripcion=item.descripcion.strip(),
+                categoria=item.categoria or "General",
+                lote=item.lote or "N/A",
+                cantidad=item.cantidad,
+                precio_unitario=item.precio_unitario,
+                porcentaje_descuento=desc_pct,
+                precio_total=total_linea,
+                fecha_caducidad=f_cad
+            )
+            db.add(det)
+
+        db.commit()
+        return {"status": "ok", "factura_id": fac.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/facturas/{id}")
+def eliminar_factura(id: int, revertir_stock: bool = Query(False), db: Session = Depends(get_db)):
+    fac = db.query(Factura).filter(Factura.id == id).first()
+    if not fac:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    if revertir_stock:
+        for det in fac.detalles:
+            prod = None
+            if det.producto_pvp_id:
+                prod = db.query(ProductoPVP).filter(ProductoPVP.id == det.producto_pvp_id).first()
+            if not prod:
+                nom_limpio = " ".join(det.descripcion.strip().split()).lower()
+                prod = db.query(ProductoPVP).filter(func.lower(func.trim(ProductoPVP.nombre)) == nom_limpio).first()
+
+            if prod:
+                nuevo_stock = float(prod.stock_actual or 0) - float(det.cantidad or 0)
+                if nuevo_stock <= 0:
+                    db.delete(prod)
+                else:
+                    prod.stock_actual = nuevo_stock
+
+    db.query(DetalleFactura).filter(DetalleFactura.factura_id == id).delete()
+    db.delete(fac)
+    db.commit()
+    return {"status": "ok", "mensaje": "Factura eliminada correctamente"}
+
+@app.patch("/api/facturas/{id}/subir-archivo")
+async def adjuntar_archivos_factura(id: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+    fac = db.query(Factura).filter(Factura.id == id).first()
+    if not fac:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    urls_subidas = []
+    for f in files:
+        url = await subir_archivo_supabase(f)
+        if url:
+            urls_subidas.append(url)
+    if urls_subidas:
+        existentes = [u.strip() for u in (fac.url_factura or "").split(",") if u.strip()]
+        total_urls = existentes + urls_subidas
+        fac.url_factura = ",".join(total_urls)
+        db.commit()
+    return {"status": "ok", "url_factura": fac.url_factura}
+
+# ---------------------------------------------------------
+# HISTORIAL DE COSTOS Y CATÁLOGO
+# ---------------------------------------------------------
+@app.get("/api/productos/catalogo-maestro")
+def catalogo_maestro(db: Session = Depends(get_db)):
+    detalles = (
+        db.query(DetalleFactura)
+        .join(Factura)
+        .join(Proveedor)
+        .filter(or_(DetalleFactura.categoria.is_(None), DetalleFactura.categoria != "Gasto Operativo"))
+        .all()
+    )
+    grupos = {}
+    for d in detalles:
+        nom = d.descripcion.strip()
+        if nom not in grupos:
+            grupos[nom] = {
+                "producto": nom,
+                "categoria": d.categoria or "General",
+                "compras": []
+            }
+        f_emision = d.factura.fecha_emision.isoformat() if d.factura and d.factura.fecha_emision else "S/F"
+        p_nombre = d.factura.proveedor_rel.nombre if (d.factura and d.factura.proveedor_rel) else "Desconocido"
+        grupos[nom]["compras"].append({
+            "fecha": f_emision,
+            "proveedor": p_nombre,
+            "factura": d.factura.numero_factura if d.factura else "S/N",
+            "precio": float(d.precio_unitario or 0),
+            "cantidad": float(d.cantidad or 0),
+            "descuento": float(d.porcentaje_descuento or 0)
+        })
+
+    res = []
+    for nom, datos in grupos.items():
+        compras = datos["compras"]
+        precios = [c["precio"] for c in compras if c["precio"] > 0]
+        p_min = min(precios) if precios else 0.0
+        p_max = max(precios) if precios else 0.0
+        p_prom = round(sum(precios) / len(precios), 2) if precios else 0.0
+        mejor_prov = "N/A"
+        for c in compras:
+            if c["precio"] == p_min:
+                mejor_prov = c["proveedor"]
+                break
+        res.append({
+            "producto": nom,
+            "categoria": datos["categoria"],
+            "total_compras": len(compras),
+            "unidades_totales": sum(c["cantidad"] for c in compras),
+            "precio_min": p_min,
+            "precio_max": p_max,
+            "precio_promedio": p_prom,
+            "mejor_proveedor": mejor_prov,
+            "historial": sorted(compras, key=lambda x: x["fecha"], reverse=True)
+        })
+    res.sort(key=lambda x: x["producto"].lower())
+    return res
 
 @app.put("/api/insumos/cambiar-categoria")
-def cambiar_categoria(payload: dict, db: Session = Depends(get_db)):
-    descripcion = payload.get("descripcion", "").strip()
-    nueva_categoria = payload.get("nueva_categoria", "General").strip()
-    nombre_norm = normalizar_nombre(descripcion)
+def cambiar_categoria_insumo(payload: CategoriaUpdate, db: Session = Depends(get_db)):
+    db.query(DetalleFactura).filter(
+        func.lower(DetalleFactura.descripcion) == payload.descripcion.strip().lower()
+    ).update({"categoria": payload.nueva_categoria}, synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}
 
-    if not descripcion:
-        raise HTTPException(status_code=400, detail="Descripción requerida")
+@app.get("/api/analitica/flujo-caja")
+def obtener_flujo_caja(db: Session = Depends(get_db)):
+    facturas = db.query(Factura).filter(Factura.fecha_emision.isnot(None)).order_by(Factura.fecha_emision.asc()).all()
+    meses = {}
+    for f in facturas:
+        mes_key = f.fecha_emision.strftime("%Y-%m")
+        meses[mes_key] = meses.get(mes_key, 0.0) + float(f.total or 0)
+    historico = [{"mes": k, "total": round(v, 2)} for k, v in sorted(meses.items())]
+    prom = round(sum(m["total"] for m in historico) / len(historico), 2) if historico else 0.0
+    return {"historico": historico, "promedio_mensual": prom}
 
-    reg = db.query(models.CatalogoInsumo).filter(
-        models.CatalogoInsumo.descripcion_normalizada == nombre_norm
-    ).first()
+# ---------------------------------------------------------
+# INVENTARIO COMERCIAL PVP
+# ---------------------------------------------------------
+@app.get("/api/pvp/listado")
+def listar_productos_pvp(db: Session = Depends(get_db)):
+    return db.query(ProductoPVP).filter(ProductoPVP.activo == True).order_by(ProductoPVP.nombre.asc()).all()
 
-    if reg:
-        reg.categoria = nueva_categoria
+@app.post("/api/pvp/guardar")
+def guardar_o_actualizar_producto_pvp(payload: dict, db: Session = Depends(get_db)):
+    prod_id = payload.get("id")
+    if prod_id:
+        prod = db.query(ProductoPVP).filter(ProductoPVP.id == prod_id).first()
+        if not prod:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
     else:
-        db.add(models.CatalogoInsumo(
-            descripcion_normalizada=nombre_norm,
-            categoria=nueva_categoria
-        ))
+        prod = ProductoPVP()
+        db.add(prod)
 
-    db.query(models.DetalleFactura).filter(
-        models.DetalleFactura.descripcion.ilike(f"%{descripcion}%")
-    ).update({"categoria": nueva_categoria}, synchronize_session=False)
-
-    db.commit()
-    return {"mensaje": f"Categoría de '{descripcion}' actualizada a '{nueva_categoria}' con éxito."}
-
-
-@app.patch("/api/facturas/{factura_id}/estado-pago")
-def actualizar_estado_pago(factura_id: int, payload: dict, db: Session = Depends(get_db)):
-    factura = db.query(models.Factura).filter(models.Factura.id == factura_id).first()
-    if not factura:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
-
-    if "estado_pago" in payload:
-        factura.estado_pago = payload["estado_pago"]
-    if "comentario" in payload:
-        factura.comentario = payload["comentario"]
+    prod.codigo_barras = payload.get("codigo_barras") or None
+    prod.nombre = payload.get("nombre", "").strip()
+    prod.categoria = payload.get("categoria", "General")
+    prod.stock_actual = float(payload.get("stock_actual", 0))
+    prod.costo_referencial = float(payload.get("costo_referencial", 0))
+    prod.pvp = float(payload.get("pvp", 0))
 
     db.commit()
-    return {"mensaje": "Estado actualizado con éxito"}
+    db.refresh(prod)
+    return prod
 
+@app.patch("/api/pvp/{id}/stock")
+def ajustar_stock_pvp(id: int, payload: dict, db: Session = Depends(get_db)):
+    prod = db.query(ProductoPVP).filter(ProductoPVP.id == id).first()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    delta = float(payload.get("delta", 0))
+    nuevo_stock = float(prod.stock_actual or 0) + delta
+    prod.stock_actual = max(0.0, nuevo_stock)
+    db.commit()
+    return {"id": prod.id, "nuevo_stock": float(prod.stock_actual)}
 
-@app.put("/api/facturas/{factura_id}")
-def editar_factura(factura_id: int, payload: dict, db: Session = Depends(get_db)):
-    factura = db.query(models.Factura).filter(models.Factura.id == factura_id).first()
-    if not factura:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
+@app.patch("/api/pvp/{id}/precio-rapido")
+def actualizar_precio_pvp_rapido(id: int, payload: dict, db: Session = Depends(get_db)):
+    prod = db.query(ProductoPVP).filter(ProductoPVP.id == id).first()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    if "pvp" in payload:
+        prod.pvp = float(payload["pvp"])
+    if "costo_referencial" in payload:
+        prod.costo_referencial = float(payload["costo_referencial"])
+    
+    db.commit()
+    return {"id": prod.id, "pvp": float(prod.pvp), "costo": float(prod.costo_referencial)}
 
-    if payload.get("numero_factura"):
-        factura.numero_factura = str(payload["numero_factura"]).strip()
-    if payload.get("fecha_emision"):
-        try:
-            factura.fecha_emision = datetime.strptime(str(payload["fecha_emision"])[:10], "%Y-%m-%d").date()
-        except ValueError:
-            pass
+@app.delete("/api/pvp/{id}")
+def eliminar_producto_pvp_directo(id: int, db: Session = Depends(get_db)):
+    prod = db.query(ProductoPVP).filter(ProductoPVP.id == id).first()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    db.query(DetalleFactura).filter(DetalleFactura.producto_pvp_id == id).update({"producto_pvp_id": None})
+    db.delete(prod)
+    db.commit()
+    return {"status": "ok", "mensaje": "Producto eliminado del inventario comercial"}
 
-    items_actualizados = payload.get("items", [])
-    if items_actualizados:
-        db.query(models.DetalleFactura).filter(models.DetalleFactura.factura_id == factura.id).delete()
-        nuevo_subtotal = 0.0
+@app.post("/api/pvp/limpiar-agotados")
+def limpiar_agotados_pvp(db: Session = Depends(get_db)):
+    eliminados = db.query(ProductoPVP).filter(ProductoPVP.stock_actual <= 0).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "ok", "eliminados": eliminados}
 
-        for it in items_actualizados:
-            descrip = str(it.get("descripcion") or "").strip()
-            if not descrip:
-                continue
-            cat = str(it.get("categoria") or "General").strip()
-            cant = limpiar_float(it.get("cantidad"), default=1.0)
-            pu = limpiar_float(it.get("precio_unitario"))
-            dcto = limpiar_float(it.get("porcentaje_descuento"))
-            sub = cant * pu * (1 - (dcto / 100.0))
-            nuevo_subtotal += sub
-            fecha_cad = limpiar_fecha(it.get("fecha_caducidad"))
+@app.post("/api/pvp/sincronizar-factura")
+def sincronizar_factura_con_stock(payload: SyncFacturaStockPayload, db: Session = Depends(get_db)):
+    afectados = 0
+    creados = 0
+    for it in payload.items:
+        nombre_limpio = it.descripcion.strip()
+        cat_limpia = (it.categoria or "").strip().lower()
 
-            detalle_kwargs = {
-                "factura_id": factura.id,
-                "descripcion": descrip[:450],
-                "categoria": cat,
-                "lote": str(it.get("lote") or "N/A"),
-                "cantidad": cant,
-                "precio_unitario": pu,
-                "porcentaje_descuento": dcto,
-                "precio_total": sub
+        if cat_limpia == "gasto operativo" or any(p in nombre_limpio.lower() for p in PALABRAS_FLETE):
+            continue
+
+        prod = None
+        if it.codigo_barras:
+            prod = db.query(ProductoPVP).filter(ProductoPVP.codigo_barras == it.codigo_barras).first()
+        if not prod:
+            prod = db.query(ProductoPVP).filter(func.lower(func.trim(ProductoPVP.nombre)) == nombre_limpio.lower()).first()
+
+        costo_u = float(it.precio_unitario)
+        cant_u = float(it.cantidad)
+
+        if prod:
+            prod.stock_actual = float(prod.stock_actual or 0) + cant_u
+            if costo_u > 0:
+                prod.costo_referencial = costo_u
+                if float(prod.pvp or 0) <= costo_u:
+                    prod.pvp = round(costo_u * 1.35, 2)
+            afectados += 1
+        else:
+            pvp_sug = round(costo_u * 1.35, 2) if costo_u > 0 else 0.0
+            nuevo = ProductoPVP(
+                codigo_barras=it.codigo_barras,
+                nombre=nombre_limpio,
+                categoria=it.categoria or "General",
+                stock_actual=cant_u,
+                costo_referencial=costo_u,
+                pvp=pvp_sug
+            )
+            db.add(nuevo)
+            creados += 1
+
+    db.commit()
+    return {"status": "ok", "actualizados": afectados, "creados": creados}
+
+# ---------------------------------------------------------
+# REGISTRO Y COBRO DE VENTAS POS
+# ---------------------------------------------------------
+@app.post("/api/pos/cobrar")
+def procesar_venta_pos(payload: VentaCobroIn, db: Session = Depends(get_db)):
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="El ticket de venta está vacío.")
+    
+    try:
+        hoy_str = datetime.utcnow().strftime("%Y%m%d")
+        total_hoy = db.query(VentaPOS).filter(VentaPOS.numero_ticket.like(f"TKT-{hoy_str}-%")).count()
+        num_ticket = f"TKT-{hoy_str}-{(total_hoy + 1):04d}"
+
+        nueva_venta = VentaPOS(
+            numero_ticket=num_ticket,
+            metodo_pago=payload.metodo_pago,
+            subtotal=payload.subtotal,
+            impuestos=payload.impuestos,
+            total=payload.total,
+            monto_recibido=payload.monto_recibido,
+            cambio=payload.cambio,
+            fecha_hora=datetime.utcnow()
+        )
+        db.add(nueva_venta)
+        db.flush()
+
+        for it in payload.items:
+            prod = None
+            if it.producto_id:
+                prod = db.query(ProductoPVP).filter(ProductoPVP.id == it.producto_id).first()
+            
+            nom_prod = prod.nombre if prod else "Producto POS"
+
+            if prod:
+                nuevo_stock = max(0.0, float(prod.stock_actual or 0) - float(it.cantidad))
+                prod.stock_actual = nuevo_stock
+
+            linea = DetalleVentaPOS(
+                venta_id=nueva_venta.id,
+                producto_id=it.producto_id,
+                nombre_producto=nom_prod,
+                cantidad=it.cantidad,
+                precio_unitario=it.precio_unitario,
+                total=it.total
+            )
+            db.add(linea)
+
+        db.commit()
+        return {
+            "status": "ok",
+            "mensaje": "Venta procesada y guardada correctamente",
+            "ticket": num_ticket,
+            "total": payload.total,
+            "cambio": payload.cambio
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error procesando cobro POS: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Fallo al registrar en base de datos: {str(e)}")
+
+@app.get("/api/pos/ventas-historial")
+def listar_historial_ventas(db: Session = Depends(get_db)):
+    ventas = (
+        db.query(VentaPOS)
+        .options(joinedload(VentaPOS.lineas))
+        .order_by(desc(VentaPOS.fecha_hora))
+        .all()
+    )
+    resultado = []
+    for v in ventas:
+        items = [
+            {
+                "id": det.id,
+                "producto_id": det.producto_id,
+                "nombre_producto": det.nombre_producto,
+                "cantidad": float(det.cantidad or 0),
+                "precio_unitario": float(det.precio_unitario or 0),
+                "total": float(det.total or 0)
             }
-            if hasattr(models.DetalleFactura, "fecha_caducidad"):
-                detalle_kwargs["fecha_caducidad"] = fecha_cad
+            for det in v.lineas
+        ]
+        resultado.append({
+            "id": v.id,
+            "numero_ticket": v.numero_ticket,
+            "fecha_hora": v.fecha_hora.isoformat() if v.fecha_hora else None,
+            "metodo_pago": v.metodo_pago,
+            "subtotal": float(v.subtotal or 0),
+            "impuestos": float(v.impuestos or 0),
+            "total": float(v.total or 0),
+            "monto_recibido": float(v.monto_recibido or 0),
+            "cambio": float(v.cambio or 0),
+            "items": items
+        })
+    return resultado
 
-            db.add(models.DetalleFactura(**detalle_kwargs))
-
-        factura.subtotal = nuevo_subtotal
-        factura.base_iva_grabada = nuevo_subtotal
-        factura.impuestos = round(nuevo_subtotal * 0.15, 2)
-        factura.total = round(nuevo_subtotal + factura.impuestos, 2)
-
+@app.patch("/api/pos/ventas/{id}")
+def editar_venta_pos(id: int, payload: VentaEditarIn, db: Session = Depends(get_db)):
+    venta = db.query(VentaPOS).filter(VentaPOS.id == id).first()
+    if not venta:
+        raise HTTPException(status_code=404, detail="Ticket de venta no encontrado.")
+    
+    if payload.metodo_pago:
+        venta.metodo_pago = payload.metodo_pago
+    if payload.monto_recibido is not None:
+        venta.monto_recibido = payload.monto_recibido
+    if payload.cambio is not None:
+        venta.cambio = payload.cambio
+        
     db.commit()
-    return {"mensaje": "Factura actualizada exitosamente"}
+    return {"status": "ok", "mensaje": "Venta actualizada correctamente"}
 
-
-@app.delete("/api/facturas/{factura_id}")
-def eliminar_factura(factura_id: int, db: Session = Depends(get_db)):
-    factura = db.query(models.Factura).filter(models.Factura.id == factura_id).first()
-    if not factura:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
-    db.delete(factura)
+@app.delete("/api/pos/ventas/{id}")
+def anular_venta_pos(id: int, devolver_stock: bool = Query(True), db: Session = Depends(get_db)):
+    venta = db.query(VentaPOS).options(joinedload(VentaPOS.lineas)).filter(VentaPOS.id == id).first()
+    if not venta:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado.")
+    
+    if devolver_stock:
+        prod_ids = [l.producto_id for l in venta.lineas if l.producto_id]
+        if prod_ids:
+            productos = {p.id: p for p in db.query(ProductoPVP).filter(ProductoPVP.id.in_(prod_ids)).all()}
+            for linea in venta.lineas:
+                if linea.producto_id in productos:
+                    p = productos[linea.producto_id]
+                    p.stock_actual = float(p.stock_actual or 0) + float(linea.cantidad or 0)
+    
+    db.delete(venta)
     db.commit()
-    return {"mensaje": "Factura eliminada correctamente"}
+    return {"status": "ok", "mensaje": "Ticket anulado exitosamente"}
+
+# ---------------------------------------------------------
+# FRONTEND ESTÁTICO (RESOLUCIÓN DE RUTAS SEGURA)
+# ---------------------------------------------------------
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+    frontend_dir = os.path.join(base_path, "frontend")
+else:
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    frontend_dir = os.path.join(base_path, "frontend")
+
+if os.path.exists(frontend_dir):
+    css_dir = os.path.join(frontend_dir, "css")
+    js_dir = os.path.join(frontend_dir, "js")
+    if os.path.exists(css_dir):
+        app.mount("/css", StaticFiles(directory=css_dir), name="css")
+    if os.path.exists(js_dir):
+        app.mount("/js", StaticFiles(directory=js_dir), name="js")
+    
+    app.mount("/frontend", StaticFiles(directory=frontend_dir), name="frontend_mount")
+    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+    @app.get("/")
+    def index():
+        return FileResponse(os.path.join(frontend_dir, "dashboard.html"))
+
+    @app.get("/{full_path:path}")
+    def catch_all(full_path: str):
+        archivo_path = os.path.join(frontend_dir, full_path)
+        if os.path.isfile(archivo_path):
+            return FileResponse(archivo_path)
+        return FileResponse(os.path.join(frontend_dir, "dashboard.html"))

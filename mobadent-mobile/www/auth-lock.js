@@ -2,7 +2,7 @@
  * Mobadent Invoices - Seguridad y Autenticación Biométrica Nativa (Estilo Sberbank)
  * - Botón dinámico Huella ⇄ Borrar (⌫)
  * - Cierre de sesión automático al cerrar la app o al pasar >45 seg minimizada
- * - Contraste optimizado para muela turquesa transparente
+ * - Disparo de evento al desbloquear para comprobación de versión
  */
 (function() {
   const PIN_LENGTH = 5;
@@ -137,19 +137,10 @@
           </button>
           <button type="button" class="key-btn h-16 rounded-2xl text-2xl font-black shadow-sm" onclick="window.AuthSecurity.pulsarTecla('0')">0</button>
           
-<button type="button" id="btnAccionDinamica" class="key-btn h-16 rounded-2xl flex items-center justify-center shadow-sm text-slate-800 font-black transition-all" onclick="window.AuthSecurity.ejecutarAccionDinamica()">
-  <svg id="svgHuellaIcon" class="w-7 h-7 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Marco de escaneo biométrico -->
-    <path d="M4 8V6a2 2 0 0 1 2-2h2" />
-    <path d="M4 16v2a2 2 0 0 0 2 2h2" />
-    <path d="M16 4h2a2 2 0 0 1 2 2v2" />
-    <path d="M16 20h2a2 2 0 0 0 2-2v-2" />
-    <!-- Candado central de seguridad -->
-    <rect x="9" y="11" width="6" height="7" rx="1.5" />
-    <path d="M10 11V9a2 2 0 0 1 4 0v2" />
-  </svg>
-  <span id="txtBorrarIcon" class="hidden text-xl font-black">⌫</span>
-</button>
+          <button type="button" id="btnAccionDinamica" class="key-btn h-16 rounded-2xl flex items-center justify-center shadow-sm text-slate-800 transition-all cursor-pointer" onclick="window.AuthSecurity.ejecutarAccionDinamica()">
+            <span id="svgHuellaIcon" class="text-xs font-black tracking-wider uppercase text-slate-700">Huella</span>
+            <span id="txtBorrarIcon" class="hidden text-xl font-black text-slate-800">⌫</span>
+          </button>
         </div>
       </div>
 
@@ -241,6 +232,8 @@
       setTimeout(() => {
         pantalla.classList.add("hidden");
         pantalla.style.opacity = "1";
+        // Notificar que la app fue desbloqueada para revisar actualizaciones
+        window.dispatchEvent(new CustomEvent("mobadent_desbloqueado"));
       }, 250);
     }
     pinActual = "";

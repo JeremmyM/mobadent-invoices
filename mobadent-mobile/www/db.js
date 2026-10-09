@@ -3,6 +3,7 @@
  * - Sin peticiones continuas (Zero Battery & Zero Compute waste)
  * - Interfaz limpia sin menciones técnicas a Neon
  * - Bloqueo instantáneo ante cualquier intento de consulta no autorizada
+ * - Soporte de comprobación de actualizaciones de versiones móviles
  */
 
 const STORAGE_DEVICE_KEY = "mobadent_hardware_device_id";
@@ -82,7 +83,7 @@ async function ejecutarPeticionNeonHttp(rawConnectionString, sql, params = []) {
   return data;
 }
 
-// 3. Crear o mostrar el overlay de bloqueo de hardware (Diseño limpio y profesional)
+// 3. Crear o mostrar el overlay de bloqueo de hardware
 function mostrarBloqueoTerminal(devId) {
   let overlay = document.getElementById("pantallaTerminalBloqueado");
   if (!overlay) {
@@ -184,7 +185,7 @@ window.verificarAprobacionEnVivo = async function() {
   }
 };
 
-// 6. Validación de Hardware Robusta (Tolerante a espacios y mayúsculas)
+// 6. Validación de Hardware Robusta
 async function validarAutorizacionHardware(esManual = false) {
   const devId = await obtenerIdDispositivo();
   const devIdLimpio = devId.trim();
@@ -199,7 +200,6 @@ async function validarAutorizacionHardware(esManual = false) {
     const sqlCheck = "SELECT autorizado FROM dispositivos_autorizados WHERE LOWER(TRIM(device_id)) = LOWER($1) LIMIT 1;";
     const res = await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, sqlCheck, [devIdLimpio]);
 
-    // Si fue eliminado o nunca existió, se auto-registra como pendiente
     if (!res || res.length === 0) {
       const sqlInsert = "INSERT INTO dispositivos_autorizados (device_id, alias, autorizado) VALUES ($1, 'Teléfono Android', FALSE) ON CONFLICT (device_id) DO NOTHING;";
       await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, sqlInsert, [devIdLimpio]).catch(() => {});
@@ -224,9 +224,7 @@ async function validarAutorizacionHardware(esManual = false) {
   }
 }
 
-// 7. Envoltorio de consultas
-// Cada vez que la app pide facturas, guarda o lee el catálogo, valida el hardware.
-// Si eliminaste o desactivaste el dispositivo, la consulta se corta al instante y bloquea la pantalla.
+// 7. Envoltorio oficial de consultas SQL
 async function neonQuery(query, params = []) {
   const { aprobado } = await validarAutorizacionHardware();
   if (!aprobado) {
@@ -237,6 +235,36 @@ async function neonQuery(query, params = []) {
   return await ejecutarPeticionNeonHttp(cfg.NEON_DATABASE_URL, query, params);
 }
 
+// 8. Motor de comprobación de actualizaciones móviles
+async function verificarActualizacionDisponible() {
+  try {
+    const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
+    if (!cfg || !cfg.NEON_DATABASE_URL) return null;
+
+    const sql = `
+      SELECT version_codigo, version_nombre, novedades, url_apk, es_obligatoria
+      FROM app_versiones
+      WHERE plataforma = 'android'
+      ORDER BY version_codigo DESC
+      LIMIT 1;
+    `;
+    const resultado = await neonQuery(sql);
+    if (!resultado || resultado.length === 0) return null;
+
+    const ultimaVersion = resultado[0];
+    const codigoServidor = parseInt(ultimaVersion.version_codigo, 10);
+    const codigoLocal = parseInt(cfg.APP_VERSION_CODE || 1, 10);
+
+    if (codigoServidor > codigoLocal) {
+      return ultimaVersion;
+    }
+    return null;
+  } catch (error) {
+    console.warn("Aviso comprobando actualización móvil en Neon:", error);
+    return null;
+  }
+}
+
 // Inicialización limpia al abrir la vista
 window.addEventListener("DOMContentLoaded", () => {
   validarAutorizacionHardware();
@@ -244,3 +272,4 @@ window.addEventListener("DOMContentLoaded", () => {
 
 window.neonQuery = neonQuery;
 window.obtenerIdDispositivo = obtenerIdDispositivo;
+window.verificarActualizacionDisponible = verificarActualizacionDisponible;

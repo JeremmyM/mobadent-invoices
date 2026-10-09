@@ -1,0 +1,27 @@
+cd "C:\Users\jerem\OneDrive\Escritorio\movadent-invoices\backend"
+.\venv\Scripts\activate
+
+# 1. Cerrar procesos bloqueados
+taskkill /f /im launcher.exe 2>$null
+taskkill /f /im python.exe 2>$null
+
+# 2. Limpiar compilaciones y cachés anteriores (limpieza de perfil de navegador para evitar caché vieja)
+Remove-Item -Recurse -Force build, dist -ErrorAction SilentlyContinue
+Remove-Item -Force launcher.spec -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\MobadentAppProfile" -ErrorAction SilentlyContinue
+Get-ChildItem -Path . -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# 3. Compilar con PyInstaller incluyendo app, frontend y .env
+pyinstaller --noconsole --onedir --clean --noconfirm --icon="app.ico" `
+  --hidden-import="fastapi" --hidden-import="uvicorn" --hidden-import="uvicorn.loops.auto" `
+  --hidden-import="uvicorn.protocols.http.auto" --hidden-import="uvicorn.lifespan.on" `
+  --hidden-import="sqlalchemy" --hidden-import="psycopg" --hidden-import="psycopg2" `
+  --hidden-import="psycopg2-binary" --hidden-import="dotenv" --hidden-import="supabase" `
+  --hidden-import="postgrest" --hidden-import="gotrue" --hidden-import="storage3" `
+  --hidden-import="realtime" --hidden-import="supafunc" --hidden-import="httpx" `
+  --hidden-import="PIL" --hidden-import="PIL.Image" --hidden-import="google.genai" `
+  --hidden-import="google.genai.types" --hidden-import="google.genai.errors" `
+  --add-data "app;app" --add-data "../frontend;frontend" --add-data ".env;." launcher.py
+
+# 4. Iniciar automáticamente la aplicación compilada
+.\dist\launcher\launcher.exe

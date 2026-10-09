@@ -1,79 +1,106 @@
 /**
- * Motor de Extracción IA Mobadent para Android
- * Replica la lógica de fallback y estructuración del backend de PC.
+ * Motor de Extracción IA Mobadent para Android (Ecuador)
+ * Soporte especializado para facturas de Distridental, Prodentec, Dentalcorp, Krobalto.
+ * Manejo de descuentos en cascada, extracción de lotes y asignación inteligente de IVA.
  */
 
 const MODELOS_IA_PRIORIDAD = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash"
+  "gemini-flash-lite-latest",
+  "gemini-3.7-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.0-flash"
 ];
 
-const PROMPT_SISTEMA_FACTURA = `
-Eres un auditor contable experto para la clínica dental Mobadent.
-Analiza la imagen o comprobante de factura adjunto y extrae la información con máxima precisión matemática y fiscal.
+function normalizarFechaEcuadorJS(v) {
+  if (!v || String(v).toLowerCase() === "null" || String(v).toLowerCase() === "none" || String(v).toLowerCase() === "s/f") {
+    return null;
+  }
+  const str = String(v).trim();
+  
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+  
+  const m = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
+  if (m) {
+    const dia = m[1].padStart(2, '0');
+    const mes = m[2].padStart(2, '0');
+    const anio = m[3];
+    return `${anio}-${mes}-${dia}`;
+  }
+  
+  const mCorto = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})/);
+  if (mCorto) {
+    const dia = mCorto[1].padStart(2, '0');
+    const mes = mCorto[2].padStart(2, '0');
+    const anio = `20${mCorto[3]}`;
+    return `${anio}-${mes}-${dia}`;
+  }
+  
+  return null;
+}
 
-Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
+const PROMPT_SISTEMA_FACTURA = `
+Eres un auditor contable experto en insumos odontológicos y facturación comercial en Ecuador (Distridental, Prodentec, Dentalcorp, Krobalto).
+Analiza la factura adjunta y extrae la información con máxima precisión matemática y fiscal.
+
+REGLAS DE EXTRACCIÓN (ECUADOR):
+1. FECHAS:
+   - 'fecha_emision': En Ecuador siempre viene en formato DD-MM-YYYY o DD/MM/YYYY. Conviértela a ISO 'YYYY-MM-DD'.
+2. DESCUENTOS EN CASCADA / DOS COLUMNAS DE DESCUENTO:
+   - Si existen dos columnas contiguas de descuento (ejemplo: '50.00' y '20.00'), calcula el descuento efectivo:
+     descuento_total = 1 - (1 - d1/100) * (1 - d2/100). Para 50% y 20%, pon 60.0 en 'porcentaje_descuento'.
+3. LOTE Y VENCIMIENTO:
+   - En Distridental: el lote aparece bajo la descripción ('Lote C843N') y la fecha en la columna contigua ('29/02/2028').
+   - En Prodentec: figura en 'Det. Adicional' como 'Lote: XXXXX Ven.DD/MM/AAAA'.
+   - Extrae 'lote' limpio (ej: 'C843N'). Si no hay, pon 'N/A'.
+   - Extrae 'fecha_caducidad' en ISO 'YYYY-MM-DD'. Si no hay, pon null.
+4. LÍNEAS DE ENVÍO / FLETE Y TARIFA IVA:
+   - Si una línea dice 'COSTO DE ENVIO' o 'FLETE', clasifícala como 'Gasto Operativo'.
+   - Si la factura en su liquidación final cobra IVA 15% sobre el envío (como en Distridental), asigna 'tarifa_iva': 15 a esa línea. Si está exenta, pon 0.
+5. RESUMEN DE TOTALES:
+   - Si los ítems ya reflejan el descuento en su valor neto, 'descuento_global' debe ser 0.00 para no duplicar deducciones.
+   - 'subtotal': El subtotal neto gravado antes de impuestos.
+   - 'impuestos': El valor monetario del IVA liquidado.
+   - 'total': El importe total que figura al final del comprobante.
+
+Devuelve ÚNICAMENTE este JSON plano sin bloques markdown:
 {
-  "proveedor_nombre": "Nombre comercial o razón social",
-  "proveedor_id_fiscal": "RUC o Cédula (solo dígitos)",
-  "numero_factura": "001-001-000000001",
+  "proveedor_nombre": "Razón social del emisor",
+  "proveedor_id_fiscal": "RUC del emisor (13 dígitos)",
+  "numero_factura": "000-000-000000000",
   "fecha_emision": "YYYY-MM-DD",
-  "numero_autorizacion": "Clave SRI si existe o null",
-  "base_iva_0": 0.00,
-  "base_iva_grabada": 0.00,
-  "porcentaje_iva": 15.0,
+  "descuento_global": 0.00,
   "subtotal": 0.00,
-  "descuento_total": 0.00,
   "impuestos": 0.00,
   "total": 0.00,
   "items": [
     {
-      "descripcion": "Nombre del insumo dental o gasto",
+      "descripcion": "Nombre del producto",
       "categoria": "General",
       "lote": "N/A",
+      "fecha_caducidad": "YYYY-MM-DD",
       "cantidad": 1.0,
       "precio_unitario": 0.00,
       "porcentaje_descuento": 0.0,
-      "precio_total": 0.00
+      "tarifa_iva": 15
     }
   ]
 }
 
-Reglas obligatorias:
-1. No incluyas explicaciones ni bloques markdown de código (\`\`\`json). Devuelve solo el JSON crudo.
-2. Cada precio_total de ítem debe ser: (cantidad * precio_unitario) * (1 - porcentaje_descuento / 100).
-3. Si el total general es cero o dudoso, calcúlalo rigurosamente como: subtotal + impuestos.
-4. Categorías permitidas para cada ítem:
-   - "General"
-   - "Restauración & Estética"
-   - "Endodoncia"
-   - "Ortodoncia"
-   - "Periodoncia & Profilaxis"
-   - "Impresión & Modelos"
-   - "Prótesis & Laboratorio"
-   - "Instrumental & Fresas"
-   - "Bioseguridad & Esterilización"
-   - "Equipos & Repuestos"
-   - "Gasto Operativo"
+Categorías válidas: 'Restauración & Estética', 'Endodoncia', 'Ortodoncia', 'Periodoncia & Profilaxis', 'Impresión & Modelos', 'Prótesis & Laboratorio', 'Instrumental & Fresas', 'Bioseguridad & Esterilización', 'Equipos & Repuestos', 'Gasto Operativo' o 'General'.
 `;
 
-/**
- * Procesa una o varias imágenes en Base64 usando Gemini AI con fallback automático de modelos.
- * @param {Array<{base64: string, mimeType: string}>} listaImagenes
- * @returns {Promise<Object>} Datos estructurados de la factura
- */
 async function procesarFacturaConGeminiMobile(listaImagenes) {
   const cfg = window.CONFIG || (typeof CONFIG !== "undefined" ? CONFIG : null);
-  const apiKey = cfg ? cfg.GEMINI_API_KEY : null;
+  const rawKeys = cfg ? (cfg.GEMINI_API_KEY || "") : "";
+  const claves = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
 
-  if (!apiKey || apiKey === "TU_GEMINI_API_KEY") {
+  if (claves.length === 0 || claves[0] === "TU_GEMINI_API_KEY") {
     throw new Error("No se ha configurado GEMINI_API_KEY en config.js");
   }
 
-  // Prepara los contenidos en formato de Google Generative Language API
   const partesImagen = listaImagenes.map(img => {
-    // Limpia encabezados de data URL si vienen incluidos
     const base64Limpio = img.base64.replace(/^data:[^;]+;base64,/, "");
     return {
       inline_data: {
@@ -94,57 +121,56 @@ async function procesarFacturaConGeminiMobile(listaImagenes) {
     ],
     generationConfig: {
       temperature: 0.1,
-      topP: 0.95,
       responseMimeType: "application/json"
     }
   };
 
   let ultimoError = null;
 
-  // Mecanismo de reintento en cascada: prueba modelo por modelo
-  for (const modelo of MODELOS_IA_PRIORIDAD) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
+  for (const apiKey of claves) {
+    for (const modelo of MODELOS_IA_PRIORIDAD) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
-      });
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody)
+        });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        const mensaje = errorData.error?.message || `HTTP ${res.status}`;
-        console.warn(`Modelo ${modelo} no disponible o falló: ${mensaje}`);
-        ultimoError = new Error(mensaje);
-        continue; // Intenta con el siguiente modelo de la lista
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          const mensaje = errorData.error?.message || `HTTP ${res.status}`;
+          ultimoError = new Error(mensaje);
+          continue;
+        }
+
+        const respuestaJson = await res.json();
+        const candidato = respuestaJson.candidates?.[0];
+        const textoGenerado = candidato?.content?.parts?.[0]?.text;
+
+        if (!textoGenerado) continue;
+
+        const jsonLimpio = textoGenerado.trim().replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+        const resultado = JSON.parse(jsonLimpio);
+
+        if (resultado.fecha_emision) {
+          resultado.fecha_emision = normalizarFechaEcuadorJS(resultado.fecha_emision);
+        }
+
+        if (Array.isArray(resultado.items)) {
+          resultado.items.forEach(it => {
+            if (it.fecha_caducidad) {
+              it.fecha_caducidad = normalizarFechaEcuadorJS(it.fecha_caducidad);
+            }
+          });
+        }
+
+        return resultado;
+
+      } catch (err) {
+        ultimoError = err;
       }
-
-      const respuestaJson = await res.json();
-      const candidato = respuestaJson.candidates?.[0];
-      const textoGenerado = candidato?.content?.parts?.[0]?.text;
-
-      if (!textoGenerado) {
-        throw new Error("Gemini no devolvió texto en la respuesta.");
-      }
-
-      // Limpia posibles etiquetas markdown residuales
-      const jsonLimpio = textoGenerado.trim().replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
-      const resultado = JSON.parse(jsonLimpio);
-
-      // Verificación y validación de totales
-      if (!resultado.total || parseFloat(resultado.total) === 0) {
-        const sumaItems = (resultado.items || []).reduce((acc, it) => acc + (parseFloat(it.precio_total) || 0), 0);
-        resultado.subtotal = resultado.subtotal || sumaItems;
-        resultado.impuestos = resultado.impuestos || +(resultado.subtotal * 0.15).toFixed(2);
-        resultado.total = +(resultado.subtotal + resultado.impuestos).toFixed(2);
-      }
-
-      return resultado;
-
-    } catch (err) {
-      ultimoError = err;
-      console.warn(`Error con modelo ${modelo}:`, err.message);
     }
   }
 
@@ -152,3 +178,4 @@ async function procesarFacturaConGeminiMobile(listaImagenes) {
 }
 
 window.procesarFacturaConGeminiMobile = procesarFacturaConGeminiMobile;
+window.normalizarFechaEcuadorJS = normalizarFechaEcuadorJS;

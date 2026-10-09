@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Mobadent Invoices - Catálogo de Productos</title>
+  <link rel="icon" type="image/x-icon" href="/frontend/app.ico">
+  <link rel="shortcut icon" href="/frontend/app.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+    
+    <!-- Encabezado -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700">Catálogo Maestro de Insumos</h1>
+          <span id="badgeTotalProductos" class="bg-blue-100 text-blue-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">
+            0 productos
+          </span>
+        </div>
+        <p class="text-xs md:text-sm text-slate-500">Historial de precios, categorías profesionales y comparativas</p>
+      </div>
+      <div>
+        <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow transition flex items-center gap-1.5">
+          + Registrar Factura
+        </a>
+      </div>
+    </div>
+
+    <!-- Pestañas de Navegación -->
+    <div class="flex border-b border-slate-200 gap-4 text-sm font-semibold">
+      <a href="dashboard.html" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2">
+        📊 Panel Estratégico & Facturas
+      </a>
+      <a href="vencimientos.html" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2">
+        ⏳ Control de Vencimientos
+      </a>
+      <a href="catalogo.html" class="pb-3 border-b-2 border-blue-600 text-blue-600 flex items-center gap-2 font-bold">
+        📦 Catálogo & Categorías
+      </a>
+    </div>
+
+    <!-- Buscador Reactivo en Vivo -->
+    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+            🔍 Búsqueda y Comparativa de Insumos en Vivo
+          </h2>
+          <p class="text-xs text-slate-400">Escribe el nombre de cualquier producto para ver su mejor precio al instante</p>
+        </div>
+        <div class="relative w-full sm:w-80">
+          <input type="text" id="inputBuscarProd" placeholder="Escribe para buscar (ej: Resina, Guantes, Conos)..." 
+                 class="border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+        </div>
+      </div>
+
+      <div id="resBuscadorProd" class="hidden border-t pt-4 mt-3">
+        <div class="text-xs font-semibold text-slate-500 mb-3" id="contadorResultados"></div>
+        <div id="contenedorTarjetasProductos" class="space-y-3"></div>
+      </div>
+    </div>
+
+    <!-- Distribución y Desglose de Categorías -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <div>
+          <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Distribución de Gasto</h2>
+          <p class="text-xs text-slate-400">Proporción por categoría clínica</p>
+        </div>
+        <div class="relative h-48 w-full mt-2 flex items-center justify-center">
+          <canvas id="chartCategoriasDoughnut"></canvas>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider">Desglose por Categoría</h2>
+          <span class="text-xs text-slate-400">Inversión y Volumen</span>
+        </div>
+        <div class="overflow-y-auto max-h-52">
+          <table class="w-full text-left text-xs" id="tableResumenCategorias">
+            <thead class="bg-slate-50 border-b text-slate-600">
+              <tr>
+                <th class="p-2">Categoría Profesional</th>
+                <th class="p-2 text-center">Unidades</th>
+                <th class="p-2 text-right">Monto Total</th>
+                <th class="p-2 text-right">% Gasto</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Catálogo General de Insumos -->
+    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 pb-4 border-b border-slate-100">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Catálogo General de Insumos</h2>
+          <p class="text-xs text-slate-400">Edición en vivo de categorías y unificación de duplicados</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 w-full md:w-auto text-xs">
+          <input type="text" id="filtroTextoCatalogo" placeholder="Buscar insumo o proveedor..." 
+                 class="border border-slate-300 rounded-lg px-3 py-2 text-xs w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          
+          <select id="filtroCategoriaCatalogo" class="border border-slate-300 rounded-lg px-2.5 py-2 text-xs bg-slate-50 text-slate-700">
+            <option value="todas">Todas las categorías</option>
+            <option value="General">General</option>
+            <option value="Restauración & Estética">Restauración & Estética</option>
+            <option value="Endodoncia">Endodoncia</option>
+            <option value="Ortodoncia">Ortodoncia</option>
+            <option value="Periodoncia & Profilaxis">Periodoncia & Profilaxis</option>
+            <option value="Impresión & Modelos">Impresión & Modelos</option>
+            <option value="Prótesis & Laboratorio">Prótesis & Laboratorio</option>
+            <option value="Instrumental & Fresas">Instrumental & Fresas</option>
+            <option value="Bioseguridad & Esterilización">Bioseguridad & Esterilización</option>
+            <option value="Equipos & Repuestos">Equipos & Repuestos</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full text-left text-xs" id="tableCatalogoMaestro">
+          <thead class="bg-slate-50 border-b text-slate-600 font-semibold uppercase">
+            <tr>
+              <th class="p-3">Producto / Presentación</th>
+              <th class="p-3">Categoría Asignada</th>
+              <th class="p-3 text-center">Compras</th>
+              <th class="p-3 text-center">Uds</th>
+              <th class="p-3 text-right">Último</th>
+              <th class="p-3 text-right">Mínimo</th>
+              <th class="p-3 text-right">Máximo</th>
+              <th class="p-3 text-right">Promedio</th>
+              <th class="p-3 text-center">Acción</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const hostActual = window.location.hostname && window.location.hostname !== "" ? window.location.hostname : "localhost";
+    const API_URL = `http://${hostActual}:8000/api`;
+
+    const CATEGORIAS_SISTEMA = [
+      "General", "Restauración & Estética", "Endodoncia", "Ortodoncia",
+      "Periodoncia & Profilaxis", "Impresión & Modelos", "Prótesis & Laboratorio",
+      "Instrumental & Fresas", "Bioseguridad & Esterilización", "Equipos & Repuestos", "Gasto Operativo"
+    ];
+
+    let catalogoCompleto = [];
+    let miGraficoCategorias = null;
+
+    async function cargarCatalogo() {
+      try {
+        const [resCat, resFact] = await Promise.all([
+          fetch(`${API_URL}/productos/catalogo-maestro`),
+          fetch(`${API_URL}/facturas/listado`)
+        ]);
+
+        const dataCat = await resCat.json();
+        catalogoCompleto = Array.isArray(dataCat) ? dataCat : (dataCat.productos || []);
+        document.getElementById("badgeTotalProductos").innerText = `${catalogoCompleto.length} productos`;
+
+        const facturas = await resFact.json();
+        procesarCategoriasYGrafico(facturas);
+        renderizarTablaCatalogo();
+      } catch (e) {
+        console.error("Error al cargar catálogo:", e);
+      }
+    }
+
+    function procesarCategoriasYGrafico(facturas) {
+      const conteoCategorias = {};
+      let totalGasto = 0;
+
+      facturas.forEach(f => {
+        (f.items || []).forEach(it => {
+          const cat = it.categoria || "General";
+          const cant = it.cantidad || 0;
+          const sub = it.subtotal || it.precio_total || (cant * (it.precio_unitario || 0));
+
+          if (cat !== "Gasto Operativo") {
+            totalGasto += sub;
+            if (!conteoCategorias[cat]) {
+              conteoCategorias[cat] = { unidades: 0, monto: 0 };
+            }
+            conteoCategorias[cat].unidades += cant;
+            conteoCategorias[cat].monto += sub;
+          }
+        });
+      });
+
+      const arrCategorias = Object.keys(conteoCategorias).map(c => ({
+        categoria: c,
+        unidades: conteoCategorias[c].unidades,
+        monto: conteoCategorias[c].monto
+      })).sort((a, b) => b.monto - a.monto);
+
+      const tbody = document.querySelector("#tableResumenCategorias tbody");
+      tbody.innerHTML = "";
+
+      if (arrCategorias.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin compras registradas.</td></tr>`;
+      } else {
+        arrCategorias.forEach(c => {
+          const pct = totalGasto > 0 ? ((c.monto / totalGasto) * 100).toFixed(1) : 0;
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+              <td class="p-2 font-medium text-slate-700">${c.categoria}</td>
+              <td class="p-2 text-center text-slate-500">${c.unidades}</td>
+              <td class="p-2 text-right font-bold text-slate-800">$${c.monto.toFixed(2)}</td>
+              <td class="p-2 text-right text-blue-600 font-bold">${pct}%</td>
+            </tr>
+          `;
+        });
+      }
+
+      const ctx = document.getElementById("chartCategoriasDoughnut");
+      if (!ctx) return;
+      if (miGraficoCategorias) miGraficoCategorias.destroy();
+
+      const colores = [
+        "rgba(37, 99, 235, 0.8)", "rgba(16, 185, 129, 0.8)", "rgba(245, 158, 11, 0.8)",
+        "rgba(139, 92, 246, 0.8)", "rgba(239, 68, 68, 0.8)", "rgba(14, 165, 233, 0.8)",
+        "rgba(236, 72, 153, 0.8)", "rgba(100, 116, 139, 0.8)"
+      ];
+
+      miGraficoCategorias = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: arrCategorias.map(c => c.categoria),
+          datasets: [{
+            data: arrCategorias.map(c => c.monto),
+            backgroundColor: colores.slice(0, arrCategorias.length),
+            borderWidth: 2,
+            borderColor: "#ffffff"
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 9 } } } },
+          cutout: "65%"
+        }
+      });
+    }
+
+    function renderizarTablaCatalogo() {
+      const q = (document.getElementById("filtroTextoCatalogo").value || "").trim().toLowerCase();
+      const catFiltro = document.getElementById("filtroCategoriaCatalogo").value;
+      const tbody = document.querySelector("#tableCatalogoMaestro tbody");
+      tbody.innerHTML = "";
+
+      const filtrados = catalogoCompleto.filter(p => {
+        const coincideTexto = !q || p.producto.toLowerCase().includes(q) || (p.proveedores && p.proveedores.some(pr => pr.toLowerCase().includes(q)));
+        const coincideCat = (catFiltro === "todas") || (p.categoria === catFiltro);
+        return coincideTexto && coincideCat;
+      });
+
+      if (filtrados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">No se encontraron productos en el catálogo.</td></tr>`;
+        return;
+      }
+
+      filtrados.forEach((prod, index) => {
+        const opcionesCat = CATEGORIAS_SISTEMA.map(cat => 
+          `<option value="${cat}" ${prod.categoria === cat ? 'selected' : ''}>${cat}</option>`
+        ).join('');
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="p-3 font-semibold text-slate-800">
+              ${prod.producto}
+              <span class="block text-[11px] text-slate-400 font-normal">Mejor precio en: <strong class="text-emerald-700">${prod.mejor_proveedor}</strong></span>
+            </td>
+            <td class="p-3">
+              <select onchange="actualizarCategoriaInsumo('${encodeURIComponent(prod.producto)}', this.value)" 
+                      class="border rounded px-2 py-1 text-xs bg-white text-slate-700 font-medium">
+                ${opcionesCat}
+              </select>
+            </td>
+            <td class="p-3 text-center text-slate-600 font-mono">${prod.total_compras}</td>
+            <td class="p-3 text-center text-slate-600 font-mono">${prod.unidades_totales}</td>
+            <td class="p-3 text-right font-medium text-slate-700 font-mono">$${prod.ultimo_precio.toFixed(2)}</td>
+            <td class="p-3 text-right font-bold text-emerald-600 font-mono">$${prod.precio_min.toFixed(2)}</td>
+            <td class="p-3 text-right font-bold text-slate-700 font-mono">$${prod.precio_max.toFixed(2)}</td>
+            <td class="p-3 text-right text-blue-600 font-medium font-mono">$${prod.precio_promedio.toFixed(2)}</td>
+            <td class="p-3 text-center">
+              <button onclick="toggleFilaHistorialCatalogo(${index})" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded text-xs font-semibold cursor-pointer">
+                Compras ▼
+              </button>
+            </td>
+          </tr>
+          <tr id="historial-cat-${index}" class="hidden bg-slate-50/70 border-b">
+            <td colspan="9" class="p-3">
+              <div class="bg-white border rounded-lg p-3">
+                <span class="text-xs font-bold text-slate-700 mb-2 block">Detalle de Compras para: ${prod.producto}</span>
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-50 border-b text-slate-500">
+                    <tr>
+                      <th class="p-1.5">Fecha</th>
+                      <th class="p-1.5">Factura N°</th>
+                      <th class="p-1.5">Proveedor</th>
+                      <th class="p-1.5 text-center">Cant.</th>
+                      <th class="p-1.5 text-right">Precio Unit.</th>
+                      <th class="p-1.5 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    ${prod.historial.map(h => `
+                      <tr class="hover:bg-slate-50">
+                        <td class="p-1.5 text-slate-500">${h.fecha}</td>
+                        <td class="p-1.5 font-mono text-slate-500">#${h.numero_factura}</td>
+                        <td class="p-1.5 font-semibold text-slate-700">${h.proveedor}</td>
+                        <td class="p-1.5 text-center font-mono">${h.cantidad}</td>
+                        <td class="p-1.5 text-right font-bold text-slate-900 font-mono">$${h.precio_unitario.toFixed(2)}</td>                         <td class="p-1.5 text-right text-slate-700 font-medium font-mono">$${h.subtotal.toFixed(2)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function actualizarCategoriaInsumo(productoEncoded, nuevaCat) {
+      const producto = decodeURIComponent(productoEncoded);
+      try {
+        await fetch(`${API_URL}/insumos/cambiar-categoria`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ descripcion: producto, nueva_categoria: nuevaCat })
+        });
+        const item = catalogoCompleto.find(p => p.producto === producto);
+        if (item) item.categoria = nuevaCat;
+      } catch (err) {
+        alert("Error al actualizar categoría: " + err.message);
+      }
+    }
+
+    function toggleFilaHistorialCatalogo(index) {
+      const el = document.getElementById(`historial-cat-${index}`);
+      if (el) el.classList.toggle("hidden");
+    }
+
+    document.getElementById("filtroTextoCatalogo").addEventListener("input", renderizarTablaCatalogo);
+    document.getElementById("filtroCategoriaCatalogo").addEventListener("change", renderizarTablaCatalogo);
+
+    let timeoutBusqueda = null;
+    document.getElementById("inputBuscarProd").addEventListener("input", (e) => {
+      clearTimeout(timeoutBusqueda);
+      const query = e.target.value.trim();
+      if (query.length < 2) {
+        document.getElementById("resBuscadorProd").classList.add("hidden");
+        return;
+      }
+      timeoutBusqueda = setTimeout(async () => {
+        try {
+          const res = await fetch(`${API_URL}/productos/buscar?q=${encodeURIComponent(query)}`);
+          const data = await res.json();
+          const contenedor = document.getElementById("resBuscadorProd");
+          const listaTarjetas = document.getElementById("contenedorTarjetasProductos");
+          const contador = document.getElementById("contadorResultados");
+
+          if (!data.productos_agrupados || data.productos_agrupados.length === 0) {
+            contador.innerText = `No se encontraron coincidencias para "${query}".`;
+            listaTarjetas.innerHTML = "";
+            contenedor.classList.remove("hidden");
+            return;
+          }
+
+          contador.innerText = `Se encontraron ${data.total_coincidencias} presentaciones para "${query}":`;
+          listaTarjetas.innerHTML = "";
+
+          data.productos_agrupados.forEach(prod => {
+            listaTarjetas.innerHTML += `
+              <div class="border rounded-xl p-3 bg-white shadow-xs border-slate-200">
+                <div class="flex justify-between items-center mb-2">
+                  <h3 class="font-bold text-slate-800 text-sm">${prod.producto}</h3>
+                  <span class="text-xs text-slate-400">Total compras: ${prod.total_compras}</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-xs">
+                  <div class="bg-emerald-50 p-2 rounded border border-emerald-100">
+                    <span class="block text-[10px] text-emerald-800 font-bold uppercase">Mínimo</span>
+                    <span class="text-base font-black text-emerald-700">$${prod.precio_min.toFixed(2)}</span>
+                  </div>
+                  <div class="bg-slate-50 p-2 rounded border border-slate-200">
+                    <span class="block text-[10px] text-slate-500 font-bold uppercase">Promedio</span>
+                    <span class="text-base font-black text-blue-700">$${prod.precio_promedio.toFixed(2)}</span>
+                  </div>
+                  <div class="bg-slate-50 p-2 rounded border border-slate-200">
+                    <span class="block text-[10px] text-slate-500 font-bold uppercase">Último</span>
+                    <span class="text-base font-black text-slate-800">$${prod.ultimo_precio.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          });
+          contenedor.classList.remove("hidden");
+        } catch (err) {
+          console.error(err);
+        }
+      }, 200);
+    });
+
+    window.addEventListener("DOMContentLoaded", cargarCatalogo);
+  </script>
+</body>
+</html>

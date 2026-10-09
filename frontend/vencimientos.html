@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Mobadent Invoices - Control de Vencimientos</title>
+  <link rel="icon" type="image/x-icon" href="/frontend/app.ico">
+  <link rel="shortcut icon" href="/frontend/app.ico">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+    
+    <!-- Encabezado -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-slate-200 gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl md:text-3xl font-extrabold text-blue-700">Mobadent Control de Caducidades</h1>
+          <span class="bg-rose-100 text-rose-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-rose-200">
+            Auditoría de Insumos
+          </span>
+        </div>
+        <p class="text-xs md:text-sm text-slate-500">Monitoreo de lotes y fechas críticas para rotación y promociones</p>
+      </div>
+      <div>
+        <a href="index.html" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-sm shadow transition flex items-center gap-1.5">
+          + Registrar Factura
+        </a>
+      </div>
+    </div>
+
+    <!-- Pestañas de Navegación -->
+    <div class="flex border-b border-slate-200 gap-4 text-sm font-semibold">
+      <a href="dashboard.html" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2">
+        📊 Panel Estratégico & Facturas
+      </a>
+      <a href="vencimientos.html" class="pb-3 border-b-2 border-rose-600 text-rose-600 flex items-center gap-2 font-bold">
+        ⏳ Control de Vencimientos (<span id="badgeTotalCaducando" class="text-rose-600 font-black">0</span>)
+      </a>
+      <a href="catalogo.html" class="pb-3 border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2">
+        📦 Catálogo & Categorías
+      </a>
+    </div>
+
+    <!-- Resumen de Caducidades en 4 Tarjetas -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div class="bg-rose-50 p-4 rounded-2xl border border-rose-200">
+        <span class="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">⚠️ Ya Vencidos</span>
+        <div id="kpiVencidos" class="text-2xl font-black text-rose-700 mt-1">0</div>
+        <span class="text-[10px] text-rose-600">Requiere desecho / reclamo</span>
+      </div>
+      <div class="bg-amber-50 p-4 rounded-2xl border border-amber-200">
+        <span class="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">⏳ Vencimiento Cercano (≤ 90d)</span>
+        <div id="kpiCercanos" class="text-2xl font-black text-amber-700 mt-1">0</div>
+        <span class="text-[10px] text-amber-700 font-bold">¡Aplicar promoción ya!</span>
+      </div>
+      <div class="bg-blue-50 p-4 rounded-2xl border border-blue-200">
+        <span class="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">📅 Medio Plazo (91 - 180d)</span>
+        <div id="kpiMedianos" class="text-2xl font-black text-blue-700 mt-1">0</div>
+        <span class="text-[10px] text-blue-600">Planificar rotación</span>
+      </div>
+      <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-200">
+        <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">✓ Largo Plazo (> 180d)</span>
+        <div id="kpiLejanos" class="text-2xl font-black text-emerald-700 mt-1">0</div>
+        <span class="text-[10px] text-emerald-600">Stock seguro</span>
+      </div>
+    </div>
+
+    <!-- Tabla Filtrable de Caducidades -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b pb-4">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Monitoreo de Productos con Fecha de Vencimiento</h2>
+          <p class="text-xs text-slate-400">Filtra por urgencia, producto o lote para tomar decisiones de abastecimiento</p>
+        </div>
+        
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <select id="filtroEstadoCaducidad" onchange="renderizarTablaCaducidades()" class="border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 font-semibold text-slate-700">
+            <option value="todos">Todos los plazos</option>
+            <option value="urgentes" selected>⚠️ Urgentes (Vencidos + Cercanos)</option>
+            <option value="vencidos">Ya Vencidos</option>
+            <option value="cercanos">Vence pronto (≤ 90 días)</option>
+            <option value="medios">Medio Plazo (91 a 180 días)</option>
+            <option value="largos">Largo Plazo (> 180 días)</option>
+          </select>
+          <input type="text" id="filtroTextoCaducidad" oninput="renderizarTablaCaducidades()" placeholder="Buscar producto, lote o proveedor..." class="border border-slate-300 rounded-lg px-3 py-1.5 w-64 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-slate-200">
+        <table class="w-full text-left text-xs" id="tableCaducidadesControl">
+          <thead class="bg-slate-50 border-b text-slate-600 uppercase font-semibold">
+            <tr>
+              <th class="p-3">Insumo</th>
+              <th class="p-3">Categoría</th>
+              <th class="p-3">Lote</th>
+              <th class="p-3 text-center">Cant. Comprada</th>
+              <th class="p-3">Proveedor / Factura</th>
+              <th class="p-3 text-center">Fecha Caducidad (EXP)</th>
+              <th class="p-3 text-center">Estado / Días Restantes</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const hostActual = window.location.hostname && window.location.hostname !== "" ? window.location.hostname : "localhost";
+    const API_URL = `http://${hostActual}:8000/api`;
+
+    let inventarioCaducidades = [];
+
+    function parsearFechaISO(val) {
+      if (!val) return null;
+      const s = String(val).trim();
+      if (s === "" || s === "null" || s === "None" || s === "S/F") return null;
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+      const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
+      if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+      return null;
+    }
+
+    function formatearFechaLatam(val) {
+      const iso = parsearFechaISO(val);
+      if (!iso) return "S/F";
+      const p = iso.split('-');
+      return `${p[2]}/${p[1]}/${p[0]}`;
+    }
+
+    async function cargarCaducidades() {
+      try {
+        const res = await fetch(`${API_URL}/facturas/listado`);
+        if (!res.ok) return;
+        const facturas = await res.json();
+
+        inventarioCaducidades = [];
+        const hoyStr = new Date().toISOString().slice(0, 10);
+        const hoyTime = new Date(hoyStr).getTime();
+
+        let countVencidos = 0;
+        let countCercanos = 0;
+        let countMedianos = 0;
+        let countLejanos = 0;
+
+        facturas.forEach(f => {
+          (f.items || []).forEach(it => {
+            const expIso = parsearFechaISO(it.fecha_caducidad);
+            if (expIso) {
+              const expTime = new Date(expIso).getTime();
+              const dias = Math.ceil((expTime - hoyTime) / (1000 * 60 * 60 * 24));
+
+              let estado = "lejanos";
+              if (dias < 0) {
+                estado = "vencidos";
+                countVencidos++;
+              } else if (dias <= 90) {
+                estado = "cercanos";
+                countCercanos++;
+              } else if (dias <= 180) {
+                estado = "medios";
+                countMedianos++;
+              } else {
+                countLejanos++;
+              }
+
+              inventarioCaducidades.push({
+                nombre: it.descripcion,
+                categoria: it.categoria || "General",
+                lote: it.lote || "N/A",
+                cantidad: it.cantidad || 1,
+                proveedor: f.proveedor,
+                factura: f.numero_factura,
+                fecha_caducidad_iso: expIso,
+                fecha_caducidad_latam: formatearFechaLatam(expIso),
+                dias_restantes: dias,
+                estado: estado
+              });
+            }
+          });
+        });
+
+        inventarioCaducidades.sort((a, b) => a.dias_restantes - b.dias_restantes);
+
+        document.getElementById("kpiVencidos").innerText = countVencidos;
+        document.getElementById("kpiCercanos").innerText = countCercanos;
+        document.getElementById("kpiMedianos").innerText = countMedianos;
+        document.getElementById("kpiLejanos").innerText = countLejanos;
+        document.getElementById("badgeTotalCaducando").innerText = countVencidos + countCercanos;
+
+        renderizarTablaCaducidades();
+      } catch (e) {
+        console.error("Error al cargar caducidades:", e);
+      }
+    }
+
+    function renderizarTablaCaducidades() {
+      const tbody = document.querySelector("#tableCaducidadesControl tbody");
+      if (!tbody) return;
+      tbody.innerHTML = "";
+
+      const filtroEstado = document.getElementById("filtroEstadoCaducidad").value;
+      const filtroTxt = (document.getElementById("filtroTextoCaducidad").value || "").toLowerCase().trim();
+
+      const filtrados = inventarioCaducidades.filter(p => {
+        if (filtroEstado === "urgentes" && p.estado !== "vencidos" && p.estado !== "cercanos") return false;
+        if (filtroEstado !== "todos" && filtroEstado !== "urgentes" && p.estado !== filtroEstado) return false;
+        if (filtroTxt) {
+          const mNombre = p.nombre.toLowerCase().includes(filtroTxt);
+          const mProv = p.proveedor.toLowerCase().includes(filtroTxt);
+          const mLote = p.lote.toLowerCase().includes(filtroTxt);
+          return mNombre || mProv || mLote;
+        }
+        return true;
+      });
+
+      if (filtrados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">No se encontraron productos registrados en este criterio de vencimiento.</td></tr>`;
+        return;
+      }
+
+      filtrados.forEach(p => {
+        let badge = "";
+        if (p.dias_restantes < 0) {
+          badge = `<span class="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 font-bold border border-rose-300">⚠️ Venció hace ${Math.abs(p.dias_restantes)} días</span>`;
+        } else if (p.dias_restantes <= 90) {
+          badge = `<span class="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-300">⏳ Vence en ${p.dias_restantes} días</span>`;
+        } else if (p.dias_restantes <= 180) {
+          badge = `<span class="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 font-semibold border border-blue-200">📅 En ${p.dias_restantes} días</span>`;
+        } else {
+          badge = `<span class="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-medium border border-emerald-200">✓ En ${p.dias_restantes} días</span>`;
+        }
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+            <td class="p-3 font-bold text-slate-800">${p.nombre}</td>
+            <td class="p-3 text-slate-500">${p.categoria}</td>
+            <td class="p-3 font-mono text-slate-600 font-bold">${p.lote}</td>
+            <td class="p-3 text-center font-bold text-slate-700">${p.cantidad} ud(s)</td>
+            <td class="p-3 text-slate-600">
+              ${p.proveedor}
+              <span class="block text-[10px] text-slate-400 font-mono">#${p.factura}</span>
+            </td>
+            <td class="p-3 text-center font-mono font-bold text-slate-800">${p.fecha_caducidad_latam}</td>
+            <td class="p-3 text-center">${badge}</td>
+          </tr>
+        `;
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", cargarCaducidades);
+  </script>
+</body>
+</html>
